@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Của tôi</string>
+    <string name="app_name">Tau</string>
     <string name="svc_desc">Chặn app khi hết giới hạn thời gian hoặc khi đang ở chế độ tập trung. Dịch vụ chỉ đọc tên app đang mở, không đọc nội dung màn hình.</string>
+    <color name="tau_orange">#F26B1D</color>
 </resources>
