@@ -21,6 +21,15 @@ import android.os.PowerManager
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.graphics.Typeface
+import android.os.Build
+import android.view.View
+import android.view.inputmethod.InputMethodManager
+import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -114,6 +123,16 @@ object Store {
     fun setFocusEnd(c: Context, t: Long) {
         p(c).edit().putLong("focus_end", t).apply()
     }
+
+    fun entLimit(c: Context): Int = p(c).getInt("ent_lim", 0)
+
+    fun setEntLimit(c: Context, m: Int) {
+        p(c).edit().putInt("ent_lim", Math.max(0, m)).apply()
+    }
+
+    fun entOn(c: Context): Set<String> = p(c).getStringSet("ent_on", emptySet()) ?: emptySet()
+
+    fun entOff(c: Context): Set<String> = p(c).getStringSet("ent_off", emptySet()) ?: emptySet()
 
     fun setLast(c: Context, pkg: String) {
         p(c).edit().putString("last_pkg", pkg).putLong("last_t", System.currentTimeMillis()).apply()
@@ -432,49 +451,156 @@ class BootReceiver : BroadcastReceiver() {
     }
 }
 
-/* ---------- Dịch vụ chặn app + ô thời gian nhỏ ---------- */
+/* ---------- App trò chơi và giải trí ---------- */
+object Ent {
+    private var cache: Set<String> = emptySet()
+    private var at = 0L
+
+    fun invalidate() {
+        at = 0L
+    }
+
+    /** Tự nhận diện theo danh mục app: trò chơi, video, âm nhạc, mạng xã hội. */
+    @Suppress("DEPRECATION")
+    fun auto(pm: PackageManager, pkg: String): Boolean {
+        return try {
+            val ai = pm.getApplicationInfo(pkg, 0)
+            val c = ai.category
+            c == ApplicationInfo.CATEGORY_GAME || c == ApplicationInfo.CATEGORY_VIDEO ||
+                c == ApplicationInfo.CATEGORY_AUDIO || c == ApplicationInfo.CATEGORY_SOCIAL ||
+                (ai.flags and ApplicationInfo.FLAG_IS_GAME) != 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun isEnt(c: Context, pkg: String): Boolean {
+        if (Store.entOn(c).contains(pkg)) return true
+        if (Store.entOff(c).contains(pkg)) return false
+        return auto(c.packageManager, pkg)
+    }
+
+    /** Tập các app đang được tính là giải trí (lưu tạm 60 giây). */
+    fun set(c: Context): Set<String> {
+        val now = System.currentTimeMillis()
+        if (now - at < 60000L) return cache
+        val out = HashSet<String>()
+        val q = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        for (ri in c.packageManager.queryIntentActivities(q, 0)) {
+            val p = ri.activityInfo.packageName
+            if (p != c.packageName && isEnt(c, p)) out.add(p)
+        }
+        cache = out
+        at = now
+        return out
+    }
+
+    /** Lưu lựa chọn của người dùng. Chỉ nhớ những app khác với kết quả tự nhận diện. */
+    fun saveChoice(c: Context, pkgs: List<String>, on: BooleanArray) {
+        val sOn = HashSet<String>(Store.entOn(c))
+        val sOff = HashSet<String>(Store.entOff(c))
+        for (i in pkgs.indices) {
+            val p = pkgs[i]
+            sOn.remove(p)
+            sOff.remove(p)
+            val a = auto(c.packageManager, p)
+            if (on[i] && !a) sOn.add(p)
+            if (!on[i] && a) sOff.add(p)
+        }
+        Store.p(c).edit().putStringSet("ent_on", sOn).putStringSet("ent_off", sOff).apply()
+        invalidate()
+    }
+}
+
+/* ---------- Dịch vụ chặn app, màn hình chặn và ô thời gian nhỏ ---------- */
 class BlockerService : AccessibilityService() {
     private var current = ""
     private var lastSaved = ""
     private var home: String? = null
+    private var imes: Set<String> = emptySet()
+    private var sysAt = 0L
+
     private var pill: TextView? = null
     private var pillPos = -1
+
+    private var blockRoot: View? = null
+    private var blockPkg = ""
+    private var cdView: TextView? = null
+    private val gates = HashMap<String, Gate>()
+
+    // Số liệu của app đang mở, làm mới mỗi 5 giây
+    private var stPkg = ""
+    private var stAt = 0L
+    private var stUsed = 0L
+    private var stLim = 0
+    private var stEnt = false
+    private var stEntUsed = 0L
+    private var stEntLim = 0
+
     private val h = Handler(Looper.getMainLooper())
     private val loop = object : Runnable {
         override fun run() {
             tickOnce()
-            h.postDelayed(this, 5000)
+            h.postDelayed(this, if (blockRoot != null) 250L else 1000L)
         }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        refreshSys(true)
+        h.removeCallbacks(loop)
+        h.post(loop)
+    }
+
+    private fun refreshSys(force: Boolean) {
+        val now = System.currentTimeMillis()
+        if (!force && now - sysAt < 60000L) return
+        sysAt = now
         home = packageManager.resolveActivity(
             Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0
         )?.activityInfo?.packageName
-        h.post(loop)
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imes = imm.enabledInputMethodList.map { it.packageName }.toSet()
+        } catch (e: Exception) {
+        }
     }
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
         try {
             if (e == null || e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
             val pkg = e.packageName?.toString() ?: return
+            refreshSys(false)
+            val cn = e.className?.toString() ?: ""
+            // Cửa sổ lớp phủ do chính Tau vẽ thì bỏ qua, chỉ màn hình chính của Tau mới tính
+            if (pkg == packageName && !cn.endsWith("MainActivity")) return
             if (pkg != lastSaved) {
                 lastSaved = pkg
                 Store.setLast(this, pkg)
             }
             if (pkg == packageName || pkg == home) {
-                current = ""
-                hidePill()
+                setCurrent("")
                 return
             }
+            // Bàn phím và các cửa sổ hệ thống không có biểu tượng app thì không đổi app hiện tại
+            if (imes.contains(pkg)) return
             if (packageManager.getLaunchIntentForPackage(pkg) == null) return
-            current = pkg
+            setCurrent(pkg)
             tickOnce()
         } catch (t: Throwable) {
             Store.setErr(this, t.toString())
         }
     }
+
+    private fun setCurrent(p: String) {
+        if (p == current) return
+        gates[current]?.leave()
+        current = p
+        hideBlock()
+        if (p.isEmpty()) hidePill()
+    }
+
+    private fun gate(pkg: String): Gate = gates.getOrPut(pkg) { Gate() }
 
     private fun screenOn(): Boolean {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -482,39 +608,187 @@ class BlockerService : AccessibilityService() {
         return pm.isInteractive && !km.isKeyguardLocked
     }
 
+    /** 0 = không hạn chế, 1 = hết thời gian giới hạn, 2 = đang tập trung. */
+    private fun reasonFor(pkg: String, now: Long): Int {
+        if (now < Store.focusEnd(this) && Store.focusApps(this).contains(pkg)) return 2
+        if (!Usage.hasAccess(this)) return 0
+        if (pkg != stPkg || now - stAt >= 5000L) refreshStats(pkg, now)
+        val el = now - stAt
+        val hitApp = stLim > 0 && (stUsed + el) / 60000L >= stLim
+        val hitEnt = stEnt && (stEntUsed + el) / 60000L >= stEntLim
+        return if (hitApp || hitEnt) 1 else 0
+    }
+
+    private fun refreshStats(pkg: String, now: Long) {
+        stPkg = pkg
+        stAt = now
+        stLim = Store.limitMin(this, pkg)
+        stEntLim = Store.entLimit(this)
+        val ent = Ent.set(this)
+        stEnt = stEntLim > 0 && ent.contains(pkg)
+        var u = 0L
+        var eu = 0L
+        for (s in Usage.sessions(this, T.dayStart(now), now)) {
+            val d = s.end - s.start
+            if (s.pkg == pkg) u += d
+            if (stEnt && ent.contains(s.pkg)) eu += d
+        }
+        stUsed = u
+        stEntUsed = eu
+    }
+
+    private fun pillText(pkg: String, now: Long): String {
+        val el = if (pkg == stPkg) now - stAt else 0L
+        if (stLim > 0) return "${T.fmt(stUsed + el)} / ${stLim}p"
+        if (stEnt) return "Giải trí ${T.fmt(stEntUsed + el)} / ${stEntLim}p"
+        return T.fmt(stUsed + el)
+    }
+
     private fun tickOnce() {
         try {
             val pkg = current
             if (pkg.isEmpty()) {
                 hidePill()
+                hideBlock()
                 return
             }
             val now = System.currentTimeMillis()
-            if (now < Store.focusEnd(this) && Store.focusApps(this).contains(pkg)) {
-                block("Đang tập trung, chưa mở app này được")
-                return
-            }
-            val lim = Store.limitMin(this, pkg)
-            val wantPill = Store.p(this).getBoolean("overlay_on", true) && screenOn()
-            if (!Usage.hasAccess(this)) {
+            val on = screenOn()
+            if (!on && blockRoot == null) {
                 hidePill()
                 return
             }
-            if (lim <= 0 && !wantPill) {
-                hidePill()
-                return
+            val reason = reasonFor(pkg, now)
+            val st = gate(pkg).step(now, reason != 0, on)
+            when (st.phase) {
+                Gate.Phase.FREE -> {
+                    hideBlock()
+                    if (Store.p(this).getBoolean("overlay_on", true) && Usage.hasAccess(this)) {
+                        showPill(pillText(pkg, now))
+                    } else {
+                        hidePill()
+                    }
+                }
+                Gate.Phase.COUNTDOWN -> {
+                    showBlock(pkg, reason)
+                    cdView?.text = ((st.leftMs + 999L) / 1000L).toString()
+                }
+                Gate.Phase.UNLOCKED -> {
+                    hideBlock()
+                    showPill("Khoá lại sau ${(st.leftMs + 999L) / 1000L}s")
+                }
             }
-            val used = Usage.todayMs(this, pkg)
-            if (lim > 0 && used / 60000 >= lim) {
-                block("Đã hết giới hạn $lim phút hôm nay")
-                return
-            }
-            if (wantPill) showPill(used, lim) else hidePill()
         } catch (t: Throwable) {
             Store.setErr(this, t.toString())
         }
     }
 
+    /* ----- Màn hình chặn toàn màn hình ----- */
+    private fun blockParams(): WindowManager.LayoutParams {
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        )
+        if (Build.VERSION.SDK_INT >= 28) {
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        return lp
+    }
+
+    private fun buildBlock(pkg: String, reason: Int): View {
+        val d = resources.displayMetrics.density
+        fun px(v: Int): Int = (v * d).toInt()
+        val label = try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+        } catch (e: Exception) {
+            pkg
+        }
+        val root = FrameLayout(this)
+        root.isClickable = true // nuốt mọi chạm, không cho thao tác app bên dưới
+        root.addView(TauBg(this), FrameLayout.LayoutParams(-1, -1))
+
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.gravity = Gravity.CENTER
+        col.setPadding(px(28), px(56), px(28), px(56))
+        root.addView(col, FrameLayout.LayoutParams(-1, -1))
+
+        fun text(t: String, size: Float, bold: Boolean, alpha: Float): TextView {
+            val v = TextView(this)
+            v.text = t
+            v.textSize = size
+            v.setTextColor(Color.WHITE)
+            v.alpha = alpha
+            v.gravity = Gravity.CENTER
+            if (bold) v.typeface = Typeface.DEFAULT_BOLD
+            return v
+        }
+
+        col.addView(
+            text(
+                if (reason == 2) "Bạn đang trong chế độ tập trung" else "Bạn đã sử dụng hết thời gian giới hạn",
+                24f, true, 1f
+            )
+        )
+        val name = text(label, 16f, false, 0.85f)
+        name.setPadding(0, px(8), 0, 0)
+        col.addView(name)
+        val cd = text("15", 96f, true, 1f)
+        cd.setPadding(0, px(24), 0, px(24))
+        col.addView(cd)
+        cdView = cd
+        col.addView(text("Hết đếm ngược, bạn được dùng app đúng 1 phút rồi app tự khoá lại.", 14f, false, 0.9f))
+
+        val b = Button(this)
+        b.text = "Về màn hình chính"
+        b.isAllCaps = false
+        b.setTextColor(Color.parseColor("#C2410C"))
+        val g = GradientDrawable()
+        g.setColor(Color.WHITE)
+        g.cornerRadius = px(24).toFloat()
+        b.background = g
+        b.setOnClickListener { performGlobalAction(GLOBAL_ACTION_HOME) }
+        val lp = LinearLayout.LayoutParams(-2, -2)
+        lp.topMargin = px(28)
+        col.addView(b, lp)
+        return root
+    }
+
+    private fun showBlock(pkg: String, reason: Int) {
+        if (blockRoot != null && blockPkg == pkg) return
+        hideBlock()
+        hidePill()
+        try {
+            val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val v = buildBlock(pkg, reason)
+            wm.addView(v, blockParams())
+            blockRoot = v
+            blockPkg = pkg
+        } catch (t: Throwable) {
+            // Không vẽ được màn hình chặn thì đẩy người dùng về màn hình chính
+            Store.setErr(this, "Không hiện được màn hình chặn: $t")
+            cdView = null
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
+    }
+
+    private fun hideBlock() {
+        val v = blockRoot ?: return
+        try {
+            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v)
+        } catch (e: Exception) {
+        }
+        blockRoot = null
+        blockPkg = ""
+        cdView = null
+    }
+
+    /* ----- Ô thời gian nhỏ ----- */
     private fun params(pos: Int): WindowManager.LayoutParams {
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -535,10 +809,9 @@ class BlockerService : AccessibilityService() {
         return lp
     }
 
-    private fun showPill(used: Long, lim: Int) {
+    private fun showPill(txt: String) {
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val pos = Store.p(this).getInt("overlay_pos", 0)
-        val txt = if (lim > 0) "${T.fmt(used)} / ${lim}p" else T.fmt(used)
         var v = pill
         if (v == null) {
             val d = resources.displayMetrics.density
@@ -570,18 +843,12 @@ class BlockerService : AccessibilityService() {
         pill = null
     }
 
-    private fun block(msg: String) {
-        current = ""
-        hidePill()
-        performGlobalAction(GLOBAL_ACTION_HOME)
-        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-    }
-
     override fun onInterrupt() {}
 
     override fun onDestroy() {
         h.removeCallbacks(loop)
         hidePill()
+        hideBlock()
         super.onDestroy()
     }
 }

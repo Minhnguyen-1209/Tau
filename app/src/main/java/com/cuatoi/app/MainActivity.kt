@@ -30,6 +30,8 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.ProgressBar
+import android.content.res.ColorStateList
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -336,9 +338,12 @@ class MainActivity : Activity() {
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(10), 0, dp(6), 0)
         col.addView(tv(a.label, 15f, true))
+        val parts = ArrayList<String>()
+        if (extra.isNotEmpty()) parts.add(extra)
         val lim = Store.limitMin(this, a.pkg)
-        val info = if (lim > 0) "$extra · giới hạn ${lim}p" else extra
-        col.addView(tv(info, 12f, false, mut))
+        if (lim > 0) parts.add("giới hạn ${lim}p")
+        if (Ent.isEnt(this, a.pkg)) parts.add("giải trí")
+        col.addView(tv(parts.joinToString(" · "), 12f, false, mut))
         r.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
         if (check) {
             val cb = CheckBox(this)
@@ -607,6 +612,38 @@ class MainActivity : Activity() {
         })
         ll.addView(oc)
 
+        val ec = card()
+        ec.addView(tv("Hẹn giờ giải trí", 16f, true))
+        ec.addView(tv("Quỹ thời gian chung mỗi ngày cho các app trò chơi và giải trí. Dùng hết quỹ là các app này bị chặn.", 12f, false, mut))
+        val elim = Store.entLimit(this)
+        val el = tv("", 14f)
+        el.setPadding(0, dp(8), 0, dp(4))
+        ec.addView(el)
+        val ebar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        ebar.max = 100
+        ebar.progressTintList = ColorStateList.valueOf(orange)
+        ec.addView(ebar, LinearLayout.LayoutParams(-1, dp(10)))
+        if (elim <= 0) {
+            el.text = "Chưa đặt giới hạn · ${Ent.set(this).size} app đang tính là giải trí"
+        } else if (!Usage.hasAccess(this)) {
+            el.text = "Cần cấp quyền xem thời gian dùng ở tab Thời gian."
+        } else {
+            el.text = "Đang tính..."
+            Thread {
+                val now = System.currentTimeMillis()
+                val set = Ent.set(this)
+                var tot = 0L
+                for (s in Usage.sessions(this, T.dayStart(now), now)) if (set.contains(s.pkg)) tot += s.end - s.start
+                runOnUiThread {
+                    el.text = "Hôm nay: ${T.fmt(tot)} / ${elim}p · ${set.size} app"
+                    ebar.progress = Math.min(100L, tot / 60000L * 100L / elim).toInt()
+                }
+            }.start()
+        }
+        ec.addView(btn(if (elim > 0) "Giới hạn: $elim phút mỗi ngày" else "Đặt giới hạn mỗi ngày") { editEnt() })
+        ec.addView(btn("Chọn app giải trí") { pickEnt() })
+        ll.addView(ec)
+
         val tc = card()
         tc.addView(tv("Chế độ tập trung", 16f, true))
         val fl = tv("", 15f, false, mut)
@@ -621,7 +658,7 @@ class MainActivity : Activity() {
             updateFocusLabel()
         }, LinearLayout.LayoutParams(0, -2, 1f))
         tc.addView(row)
-        tc.addView(tv("Chỉ chặn các app được tick bên dưới.", 12f, false, mut))
+        tc.addView(tv("Chỉ chặn các app được tick bên dưới. Khi bị chặn: màn hình chặn đếm ngược 15 giây, sau đó mở 1 phút, rồi khoá lại.", 12f, false, mut))
         ll.addView(tc)
         updateFocusLabel()
 
@@ -630,6 +667,41 @@ class MainActivity : Activity() {
         lc.addView(tv("Tick để chặn. Chạm vào tên app để đặt giới hạn phút mỗi ngày.", 12f, false, mut))
         for (a in apps) lc.addView(appRow(a, "", true))
         ll.addView(lc)
+    }
+
+    private fun editEnt() {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), 0)
+        val et = EditText(this)
+        et.inputType = InputType.TYPE_CLASS_NUMBER
+        et.hint = "Số phút mỗi ngày, để trống = tắt"
+        val cur = Store.entLimit(this)
+        if (cur > 0) et.setText(cur.toString())
+        box.addView(et)
+        AlertDialog.Builder(this)
+            .setTitle("Hẹn giờ giải trí")
+            .setView(box)
+            .setPositiveButton("Lưu") { _, _ ->
+                Store.setEntLimit(this, et.text.toString().toIntOrNull() ?: 0)
+                buildFocus()
+            }
+            .setNegativeButton("Huỷ", null)
+            .show()
+    }
+
+    private fun pickEnt() {
+        val names = Array(apps.size) { apps[it].label }
+        val checked = BooleanArray(apps.size) { Ent.isEnt(this, apps[it].pkg) }
+        AlertDialog.Builder(this)
+            .setTitle("App tính là giải trí")
+            .setMultiChoiceItems(names, checked) { _, i, v -> checked[i] = v }
+            .setPositiveButton("Lưu") { _, _ ->
+                Ent.saveChoice(this, apps.map { it.pkg }, checked)
+                buildFocus()
+            }
+            .setNegativeButton("Huỷ", null)
+            .show()
     }
 
     /* ---------- Tab 3: Sức khoẻ ---------- */
