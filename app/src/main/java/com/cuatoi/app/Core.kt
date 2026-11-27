@@ -30,6 +30,8 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.Manifest
+import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -176,6 +178,9 @@ object Usage {
             Process.myUid(),
             c.packageName
         )
+        if (mode == AppOpsManager.MODE_DEFAULT) {
+            return c.checkCallingOrSelfPermission(Manifest.permission.PACKAGE_USAGE_STATS) == PackageManager.PERMISSION_GRANTED
+        }
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
@@ -514,11 +519,22 @@ object Ent {
 
 /* ---------- Dịch vụ chặn app, màn hình chặn và ô thời gian nhỏ ---------- */
 class BlockerService : AccessibilityService() {
+    companion object {
+        @Volatile
+        var inst: BlockerService? = null
+    }
+
     private var current = ""
     private var lastSaved = ""
     private var home: String? = null
     private var imes: Set<String> = emptySet()
     private var sysAt = 0L
+
+    private var accAt = 0L
+    private var evFrom = 0L
+    private var lastPoll = 0L
+    private var demoUntil = 0L
+    private var lastState = ""
 
     private var pill: TextView? = null
     private var pillPos = -1
@@ -547,9 +563,21 @@ class BlockerService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        inst = this
         refreshSys(true)
         h.removeCallbacks(loop)
         h.post(loop)
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        inst = null
+        return super.onUnbind(intent)
+    }
+
+    /** Hiện thử ô thời gian khoảng 8 giây, bất kể đang ở app nào. */
+    fun demo() {
+        demoUntil = System.currentTimeMillis() + 8000L
+        h.post { tickOnce() }
     }
 
     private fun refreshSys(force: Boolean) {
@@ -570,26 +598,52 @@ class BlockerService : AccessibilityService() {
         try {
             if (e == null || e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
             val pkg = e.packageName?.toString() ?: return
-            refreshSys(false)
             val cn = e.className?.toString() ?: ""
             // Cửa sổ lớp phủ do chính Tau vẽ thì bỏ qua, chỉ màn hình chính của Tau mới tính
             if (pkg == packageName && !cn.endsWith("MainActivity")) return
+            accAt = System.currentTimeMillis()
             if (pkg != lastSaved) {
                 lastSaved = pkg
                 Store.setLast(this, pkg)
             }
-            if (pkg == packageName || pkg == home) {
-                setCurrent("")
-                return
-            }
-            // Bàn phím và các cửa sổ hệ thống không có biểu tượng app thì không đổi app hiện tại
-            if (imes.contains(pkg)) return
-            if (packageManager.getLaunchIntentForPackage(pkg) == null) return
-            setCurrent(pkg)
+            applyForeground(pkg)
             tickOnce()
         } catch (t: Throwable) {
             Store.setErr(this, t.toString())
         }
+    }
+
+    /** Dùng chung cho sự kiện trợ năng và dữ liệu sử dụng. */
+    private fun applyForeground(pkg: String) {
+        refreshSys(false)
+        if (pkg == packageName || pkg == home) {
+            setCurrent("")
+            return
+        }
+        // Bàn phím và các cửa sổ hệ thống không có biểu tượng app thì không đổi app hiện tại
+        if (imes.contains(pkg)) return
+        if (packageManager.getLaunchIntentForPackage(pkg) == null) return
+        setCurrent(pkg)
+    }
+
+    /**
+     * Cách thứ hai để biết app nào đang mở, phòng khi sự kiện trợ năng không đến.
+     * Chỉ nhận sự kiện mới hơn sự kiện trợ năng gần nhất để hai nguồn không giẫm lên nhau.
+     */
+    private fun pollForeground(now: Long) {
+        if (!Usage.hasAccess(this)) return
+        if (evFrom == 0L) evFrom = now - 3000L
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val ev = usm.queryEvents(evFrom, now) ?: return
+        evFrom = now - 300L
+        val e = UsageEvents.Event()
+        var fg: String? = null
+        while (ev.hasNextEvent()) {
+            ev.getNextEvent(e)
+            if (e.timeStamp <= accAt) continue
+            if (e.eventType == 1) fg = e.packageName
+        }
+        if (fg != null) applyForeground(fg)
     }
 
     private fun setCurrent(p: String) {
@@ -606,6 +660,12 @@ class BlockerService : AccessibilityService() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         return pm.isInteractive && !km.isKeyguardLocked
+    }
+
+    private fun pillState(s: String) {
+        if (s == lastState) return
+        lastState = s
+        Store.p(this).edit().putString("pill_state", T.hms(System.currentTimeMillis()) + " · " + s).apply()
     }
 
     /** 0 = không hạn chế, 1 = hết thời gian giới hạn, 2 = đang tập trung. */
@@ -646,16 +706,27 @@ class BlockerService : AccessibilityService() {
 
     private fun tickOnce() {
         try {
+            val now = System.currentTimeMillis()
+            val on = screenOn()
+            if (on && now - lastPoll >= 1000L) {
+                lastPoll = now
+                pollForeground(now)
+            }
+            if (now < demoUntil) {
+                showPill("Ô thời gian đang hoạt động")
+                pillState("đang chạy thử")
+                return
+            }
             val pkg = current
             if (pkg.isEmpty()) {
                 hidePill()
                 hideBlock()
+                pillState("ẩn: đang ở màn hình chính hoặc trong Tau")
                 return
             }
-            val now = System.currentTimeMillis()
-            val on = screenOn()
             if (!on && blockRoot == null) {
                 hidePill()
+                pillState("ẩn: màn hình đang tắt hoặc khoá")
                 return
             }
             val reason = reasonFor(pkg, now)
@@ -663,24 +734,44 @@ class BlockerService : AccessibilityService() {
             when (st.phase) {
                 Gate.Phase.FREE -> {
                     hideBlock()
-                    if (Store.p(this).getBoolean("overlay_on", true) && Usage.hasAccess(this)) {
-                        showPill(pillText(pkg, now))
-                    } else {
+                    if (!Store.p(this).getBoolean("overlay_on", true)) {
                         hidePill()
+                        pillState("ẩn: đã tắt trong cài đặt")
+                    } else if (!Usage.hasAccess(this)) {
+                        hidePill()
+                        pillState("ẩn: chưa cấp quyền xem thời gian dùng")
+                    } else {
+                        showPill(pillText(pkg, now))
+                        pillState("đang hiện cho $pkg")
                     }
                 }
                 Gate.Phase.COUNTDOWN -> {
                     showBlock(pkg, reason)
                     cdView?.text = ((st.leftMs + 999L) / 1000L).toString()
+                    pillState("đang hiện màn hình chặn cho $pkg")
                 }
                 Gate.Phase.UNLOCKED -> {
                     hideBlock()
                     showPill("Khoá lại sau ${(st.leftMs + 999L) / 1000L}s")
+                    pillState("đang mở khoá 1 phút cho $pkg")
                 }
             }
         } catch (t: Throwable) {
             Store.setErr(this, t.toString())
+            pillState("lỗi: ${t.javaClass.simpleName} ${t.message}")
         }
+    }
+
+    /* ----- Cách vẽ lớp phủ: ưu tiên "hiển thị trên app khác" nếu đã cấp, không thì lớp phủ trợ năng ----- */
+    private fun useApp(): Boolean = Build.VERSION.SDK_INT >= 26 && Settings.canDrawOverlays(this)
+
+    private fun overlayType(): Int =
+        if (useApp()) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+
+    private fun wm(): WindowManager {
+        val c: Context = if (useApp()) applicationContext else this
+        return c.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     }
 
     /* ----- Màn hình chặn toàn màn hình ----- */
@@ -688,7 +779,7 @@ class BlockerService : AccessibilityService() {
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -764,9 +855,8 @@ class BlockerService : AccessibilityService() {
         hideBlock()
         hidePill()
         try {
-            val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val v = buildBlock(pkg, reason)
-            wm.addView(v, blockParams())
+            wm().addView(v, blockParams())
             blockRoot = v
             blockPkg = pkg
         } catch (t: Throwable) {
@@ -780,7 +870,7 @@ class BlockerService : AccessibilityService() {
     private fun hideBlock() {
         val v = blockRoot ?: return
         try {
-            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v)
+            wm().removeView(v)
         } catch (e: Exception) {
         }
         blockRoot = null
@@ -793,8 +883,10 @@ class BlockerService : AccessibilityService() {
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         )
         val d = resources.displayMetrics.density
@@ -805,30 +897,31 @@ class BlockerService : AccessibilityService() {
             else -> Gravity.TOP or Gravity.END
         }
         lp.x = (8 * d).toInt()
-        lp.y = if (pos >= 2) (72 * d).toInt() else (36 * d).toInt()
+        lp.y = if (pos >= 2) (72 * d).toInt() else (52 * d).toInt()
         return lp
     }
 
     private fun showPill(txt: String) {
-        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val pos = Store.p(this).getInt("overlay_pos", 0)
         var v = pill
         if (v == null) {
             val d = resources.displayMetrics.density
             val tv = TextView(this)
             tv.setTextColor(Color.WHITE)
-            tv.textSize = 12f
-            tv.setPadding((10 * d).toInt(), (5 * d).toInt(), (10 * d).toInt(), (5 * d).toInt())
+            tv.textSize = 14f
+            tv.typeface = Typeface.DEFAULT_BOLD
+            tv.setPadding((12 * d).toInt(), (7 * d).toInt(), (12 * d).toInt(), (7 * d).toInt())
             val g = GradientDrawable()
-            g.setColor(Color.parseColor("#B3000000"))
-            g.cornerRadius = 14 * d
+            g.setColor(Color.parseColor("#F26B1D"))
+            g.setStroke((2 * d).toInt(), Color.WHITE)
+            g.cornerRadius = 18 * d
             tv.background = g
-            wm.addView(tv, params(pos))
+            wm().addView(tv, params(pos))
             pill = tv
             pillPos = pos
             v = tv
         } else if (pillPos != pos) {
-            wm.updateViewLayout(v, params(pos))
+            wm().updateViewLayout(v, params(pos))
             pillPos = pos
         }
         v.text = txt
@@ -837,7 +930,7 @@ class BlockerService : AccessibilityService() {
     private fun hidePill() {
         val v = pill ?: return
         try {
-            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v)
+            wm().removeView(v)
         } catch (e: Exception) {
         }
         pill = null
@@ -846,6 +939,7 @@ class BlockerService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        inst = null
         h.removeCallbacks(loop)
         hidePill()
         hideBlock()

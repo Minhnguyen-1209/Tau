@@ -8,6 +8,7 @@ import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -592,6 +593,24 @@ class MainActivity : Activity() {
         )
         val err = Store.p(this).getString("last_err", null)
         if (err != null) st.addView(tv("Lỗi gần nhất: $err", 12f, false, Color.RED))
+        st.addView(tv("Ô thời gian: " + (Store.p(this).getString("pill_state", null) ?: "chưa có thông tin"), 12f, false, mut))
+        if (!Settings.canDrawOverlays(this)) {
+            st.addView(tv("Nếu ô thời gian hoặc màn hình chặn không hiện, hãy cấp thêm quyền hiển thị trên app khác.", 12f, false, mut))
+            st.addView(btn("Cấp quyền hiển thị trên app khác") {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            })
+        } else {
+            st.addView(tv("Quyền hiển thị trên app khác: đã cấp", 12f, false, mut))
+        }
+        st.addView(btn("Hiện thử ô thời gian") {
+            val svc = BlockerService.inst
+            if (svc == null) {
+                Toast.makeText(this, "Dịch vụ chặn app chưa chạy. Hãy bật ở cài đặt trợ năng.", Toast.LENGTH_LONG).show()
+            } else {
+                svc.demo()
+                Toast.makeText(this, "Nhìn ô cam ở góc màn hình trong vài giây", Toast.LENGTH_LONG).show()
+            }
+        })
         if (!on) st.addView(btn("Mở cài đặt trợ năng") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) })
         if (!Usage.hasAccess(this)) st.addView(btn("Cấp quyền xem thời gian dùng") { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) })
         ll.addView(st)

@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val run: Int = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+
 android {
     namespace = "com.cuatoi.app"
     compileSdk = 34
@@ -11,8 +13,24 @@ android {
         applicationId = "com.cuatoi.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = run
+        versionName = "2.$run"
+    }
+
+    // Khoá ký cố định: mọi bản build đều cùng chữ ký nên cài đè được và giữ nguyên dữ liệu.
+    signingConfigs {
+        create("tau") {
+            storeFile = file("tau.jks")
+            storePassword = "tau-personal"
+            keyAlias = "tau"
+            keyPassword = "tau-personal"
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("tau")
+        }
     }
 
     compileOptions {
