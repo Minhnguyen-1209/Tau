@@ -7,7 +7,7 @@ package com.cuatoi.app
  *
  * Lớp này không dùng Android để có thể chạy thử độc lập.
  */
-class Gate(val countdownMs: Long = 15000L, val unlockMs: Long = 60000L) {
+class Gate(var countdownMs: Long = 15000L, var unlockMs: Long = 60000L) {
     enum class Phase { FREE, COUNTDOWN, UNLOCKED }
 
     class State(val phase: Phase, val leftMs: Long)

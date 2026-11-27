@@ -270,44 +270,12 @@ class MainActivity : Activity() {
         loadApps()
         refresh()
         h.post(tick)
-        h.postDelayed({ autoFix() }, 3000)
+        if (MonitorService.inst == null) MonitorService.start(this)
+        if (needNotifPerm()) askNotif()
     }
 
-    private var lastFix = 0L
-
-    /** Dịch vụ bật trong cài đặt nhưng không chạy: thử đánh thức lại một lần mỗi 2 phút. */
-    private fun autoFix() {
-        if (BlockerService.inst == null && serviceOn() && System.currentTimeMillis() - lastFix > 120000L) {
-            lastFix = System.currentTimeMillis()
-            Store.logSvc(this, "tự khởi động lại dịch vụ")
-            restartService()
-        }
-    }
-
-    /** Tắt rồi bật lại thành phần dịch vụ để hệ thống gắn lại dịch vụ trợ năng. */
-    private fun restartService() {
-        try {
-            val cn = ComponentName(this, BlockerService::class.java)
-            packageManager.setComponentEnabledSetting(cn, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-            h.postDelayed({
-                try {
-                    packageManager.setComponentEnabledSetting(cn, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
-                } catch (e: Exception) {
-                }
-                h.postDelayed({
-                    val ok = BlockerService.inst != null
-                    Toast.makeText(
-                        this,
-                        if (ok) "Dịch vụ đã chạy lại" else "Chưa chạy được. Vào cài đặt trợ năng, tắt rồi bật lại Tau.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    refresh()
-                }, 2000)
-            }, 700)
-        } catch (e: Exception) {
-            Toast.makeText(this, "Không khởi động lại được: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
+    private fun monitorOn(): Boolean =
+        MonitorService.inst != null && System.currentTimeMillis() - Store.p(this).getLong("mon_beat", 0L) < 6000L
 
     private fun openFirst(list: List<Intent>) {
         for (i in list) {
@@ -367,11 +335,6 @@ class MainActivity : Activity() {
         }
         apps = list.sortedBy { it.label.lowercase() }
         appMap = apps.associateBy { it.pkg }
-    }
-
-    private fun serviceOn(): Boolean {
-        val s = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
-        return s.contains(packageName) && s.contains("BlockerService")
     }
 
     private fun needNotifPerm(): Boolean =
@@ -475,22 +438,25 @@ class MainActivity : Activity() {
             val now = System.currentTimeMillis()
             val t0 = T.dayStart(now)
             var sess: List<Session> = emptyList()
+            var ent: Set<String> = emptySet()
             try {
                 Usage.syncDays(this, ok, 8)
+                ent = Ent.set(this)
                 if (mode == 0) sess = Usage.sessions(this, t0, now)
             } catch (e: Exception) {
                 Store.setErr(this, e.toString())
             }
+            val entF = ent
             runOnUiThread {
                 if (g == gen && tab == 0) {
                     ll.removeView(loading)
-                    if (mode == 0) renderToday(ll, sess, ok, t0, now) else renderRange(ll, if (mode == 1) 7 else 30, t0)
+                    if (mode == 0) renderToday(ll, sess, ok, entF, t0, now) else renderRange(ll, if (mode == 1) 7 else 30, t0, entF)
                 }
             }
         }.start()
     }
 
-    private fun renderToday(ll: LinearLayout, sess: List<Session>, ok: Set<String>, t0: Long, now: Long) {
+    private fun renderToday(ll: LinearLayout, sess: List<Session>, ok: Set<String>, ent: Set<String>, t0: Long, now: Long) {
         val tot = Usage.totals(sess, t0, now, ok)
         val sum = tot.values.sum()
         val c1 = card()
@@ -500,24 +466,31 @@ class MainActivity : Activity() {
         if (yt > 0) c1.addView(tv("Hôm qua cả ngày: ${T.fmt(yt)}", 13f, false, mut))
         ll.addView(c1)
 
+        entCard(ll, tot, ent, 1, Store.loadDay(this, T.key(T.addDays(t0, -1))), 1)
+
+        val slots = Usage.slots(sess, t0, ok)
+        val cur = ((now - t0) / 1800000L).toInt()
+
         val hc = card()
-        hc.addView(tv("Theo giờ trong ngày (phút)", 14f, true))
+        hc.addView(tv("Theo khung 30 phút (phút)", 14f, true))
         val ch = BarChart(this)
-        ch.vals = Usage.hourly(sess, t0, ok)
-        ch.labels = Array(24) { if (it % 6 == 0) "${it}h" else "" }
-        ch.hi = ((now - t0) / 3600000L).toInt()
+        ch.vals = DoubleArray(48) { slots[it].values.sum() / 60000.0 }
+        ch.labels = Array(48) { if (it % 12 == 0) "${it / 2}h" else "" }
+        ch.hi = cur
         hc.addView(ch)
         ll.addView(hc)
 
-        val tc = card()
-        tc.addView(tv("Dòng thời gian", 14f, true))
-        val shown = sess.filter { ok.contains(it.pkg) && it.end - it.start >= 20000 }.reversed().take(40)
-        if (shown.isEmpty()) tc.addView(tv("Chưa có phiên dùng nào đủ dài.", 13f, false, mut))
-        for (s in shown) {
-            val a = appMap[s.pkg] ?: continue
-            tc.addView(sessionRow(a, s))
+        val sc = card()
+        sc.addView(tv("Từng khung giờ (chạm để xem app nào, bao lâu)", 14f, true))
+        var shown = 0
+        for (i in 47 downTo 0) {
+            val m = slots[i]
+            if (m.values.sum() < 30000L) continue
+            sc.addView(slotRow(i, m))
+            shown++
         }
-        ll.addView(tc)
+        if (shown == 0) sc.addView(tv("Chưa có khung giờ nào đủ dữ liệu.", 13f, false, mut))
+        ll.addView(sc)
 
         val ac = card()
         ac.addView(tv("Theo app (chạm để đặt giới hạn)", 14f, true))
@@ -530,24 +503,119 @@ class MainActivity : Activity() {
         ll.addView(ac)
     }
 
-    private fun sessionRow(a: AppInfo, s: Session): View {
-        val r = LinearLayout(this)
-        r.orientation = LinearLayout.HORIZONTAL
-        r.gravity = Gravity.CENTER_VERTICAL
-        r.setPadding(0, dp(5), 0, dp(5))
-        val tm = tv(T.hm(s.start) + "–" + T.hm(s.end), 12f, false, mut)
-        r.addView(tm, LinearLayout.LayoutParams(dp(92), -2))
-        val ic = ImageView(this)
-        ic.setImageDrawable(a.icon)
-        r.addView(ic, LinearLayout.LayoutParams(dp(24), dp(24)))
-        val nm = tv(a.label, 14f)
-        nm.setPadding(dp(8), 0, dp(6), 0)
-        r.addView(nm, LinearLayout.LayoutParams(0, -2, 1f))
-        r.addView(tv(T.fmt(s.end - s.start), 13f, true))
-        return r
+    /** Một khung 30 phút. Chạm vào để mở danh sách app đã dùng trong khung đó. */
+    private fun slotRow(i: Int, m: Map<String, Long>): View {
+        val wrap = LinearLayout(this)
+        wrap.orientation = LinearLayout.VERTICAL
+        val total = m.values.sum()
+        val sorted = m.entries.sortedByDescending { it.value }
+
+        val head = LinearLayout(this)
+        head.orientation = LinearLayout.HORIZONTAL
+        head.gravity = Gravity.CENTER_VERTICAL
+        head.setPadding(0, dp(9), 0, dp(9))
+        head.addView(tv(T.mm(i * 30) + "–" + T.mm(i * 30 + 30), 14f, true), LinearLayout.LayoutParams(dp(104), -2))
+        val icons = LinearLayout(this)
+        icons.orientation = LinearLayout.HORIZONTAL
+        for (e in sorted.take(3)) {
+            val a = appMap[e.key] ?: continue
+            val ic = ImageView(this)
+            ic.setImageDrawable(a.icon)
+            val lp = LinearLayout.LayoutParams(dp(24), dp(24))
+            lp.rightMargin = dp(4)
+            icons.addView(ic, lp)
+        }
+        head.addView(icons, LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(tv(T.fmt(total), 14f, true))
+        val arrow = tv("  ▾", 14f, false, mut)
+        head.addView(arrow)
+        wrap.addView(head)
+
+        val body = LinearLayout(this)
+        body.orientation = LinearLayout.VERTICAL
+        body.setPadding(dp(8), 0, 0, dp(6))
+        body.visibility = View.GONE
+        for (e in sorted) {
+            val a = appMap[e.key] ?: continue
+            val r = LinearLayout(this)
+            r.orientation = LinearLayout.HORIZONTAL
+            r.gravity = Gravity.CENTER_VERTICAL
+            r.setPadding(0, dp(4), 0, dp(4))
+            val ic = ImageView(this)
+            ic.setImageDrawable(a.icon)
+            r.addView(ic, LinearLayout.LayoutParams(dp(26), dp(26)))
+            val nm = tv(a.label, 14f)
+            nm.setPadding(dp(10), 0, dp(6), 0)
+            r.addView(nm, LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(tv(T.fmt(e.value), 14f, true))
+            body.addView(r)
+        }
+        wrap.addView(body)
+        head.setOnClickListener {
+            val open = body.visibility != View.VISIBLE
+            body.visibility = if (open) View.VISIBLE else View.GONE
+            arrow.text = if (open) "  ▴" else "  ▾"
+        }
+        val line = View(this)
+        line.setBackgroundColor(Color.parseColor("#EEEEEE"))
+        wrap.addView(line, LinearLayout.LayoutParams(-1, 1))
+        return wrap
     }
 
-    private fun renderRange(ll: LinearLayout, days: Int, t0: Long) {
+    /** Thẻ tổng hợp các app trò chơi và giải trí. [days] = 1 là hôm nay, [prev] là kỳ trước (hôm qua nếu là hôm nay). */
+    private fun entCard(ll: LinearLayout, cur: Map<String, Long>, ent: Set<String>, days: Int, prev: Map<String, Long>?, havePrev: Int) {
+        val c = card()
+        c.addView(tv("Trò chơi & giải trí", 16f, true))
+        val mine = cur.filter { ent.contains(it.key) }
+        val sum = mine.values.sum()
+        c.addView(tv(T.fmt(sum), 28f, true))
+        val prevSum = prev?.filter { ent.contains(it.key) }?.values?.sum() ?: 0L
+        val lim = Store.entLimit(this)
+        if (days == 1) {
+            if (lim > 0) {
+                val left = lim * 60000L - sum
+                c.addView(
+                    tv(
+                        if (left > 0) "Còn ${T.fmt(left)} trong quỹ $lim phút hôm nay" else "Đã hết quỹ $lim phút hôm nay",
+                        13f, false, if (left > 0) ink else Color.RED
+                    )
+                )
+                val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+                bar.max = 100
+                bar.progress = Math.min(100L, sum / 60000L * 100L / lim).toInt()
+                bar.progressTintList = ColorStateList.valueOf(orange)
+                c.addView(bar, LinearLayout.LayoutParams(-1, dp(10)))
+            } else {
+                c.addView(tv("Chưa đặt quỹ thời gian giải trí mỗi ngày.", 13f, false, mut))
+            }
+            if (havePrev > 0) c.addView(tv("Hôm qua: ${T.fmt(prevSum)}", 13f, false, mut))
+        } else {
+            val have = Math.max(Usage.daysWithData(this, T.addDays(T.dayStart(System.currentTimeMillis()), -(days - 1)), days), 1)
+            val avg = sum / have
+            c.addView(tv("Trung bình mỗi ngày: ${T.fmt(avg)}", 13f, false, ink))
+            if (havePrev > 0) {
+                val pAvg = prevSum / havePrev
+                c.addView(tv("$days ngày trước đó: ${T.fmt(pAvg)} mỗi ngày (${T.delta(avg, pAvg)})", 13f, false, ink))
+            }
+        }
+        val top = mine.entries.sortedByDescending { it.value }.take(8)
+        if (ent.isEmpty()) {
+            c.addView(tv("Chưa có app nào được tính là giải trí. Bấm Chọn app giải trí.", 13f, false, mut))
+        } else if (top.isEmpty()) {
+            c.addView(tv("Chưa dùng app giải trí nào trong kỳ này.", 13f, false, mut))
+        }
+        for (e in top) {
+            val a = appMap[e.key] ?: continue
+            c.addView(appRow(a, T.fmt(e.value), false))
+        }
+        val row = LinearLayout(this)
+        row.addView(btn("Chọn app giải trí") { pickEnt() })
+        row.addView(btn(if (lim > 0) "Quỹ: $lim phút/ngày" else "Đặt quỹ mỗi ngày") { editEnt() })
+        c.addView(row)
+        ll.addView(c)
+    }
+
+    private fun renderRange(ll: LinearLayout, days: Int, t0: Long, ent: Set<String>) {
         val curFrom = T.addDays(t0, -(days - 1))
         val prevFrom = T.addDays(t0, -(2 * days - 1))
         val cur = Usage.range(this, curFrom, days)
@@ -572,6 +640,8 @@ class MainActivity : Activity() {
             c1.addView(tv("Kỳ trước mới có $havePrev/$days ngày dữ liệu vì app chỉ ghi lại từ lúc bạn cài, nên so sánh dùng mức trung bình mỗi ngày.", 12f, false, mut))
         }
         ll.addView(c1)
+
+        entCard(ll, cur, ent, days, prev, havePrev)
 
         val cc = card()
         cc.addView(tv("Từng ngày (phút)", 14f, true))
@@ -630,28 +700,29 @@ class MainActivity : Activity() {
         ll.addView(head("Tập trung & giới hạn"))
 
         val st = card()
-        val on = serviceOn()
-        val running = BlockerService.inst != null
+        val running = monitorOn()
         st.addView(
             tv(
-                if (running) "Dịch vụ chặn app: đang chạy"
-                else if (on) "Dịch vụ chặn app: đã bật nhưng đang bị hệ thống tắt ngầm"
-                else "Dịch vụ chặn app: CHƯA bật",
+                if (running) "Bộ theo dõi: đang chạy" else "Bộ theo dõi: chưa chạy",
                 15f, true, if (running) Color.parseColor("#15803D") else Color.RED
             )
         )
+        st.addView(tv("Tau không còn cần dịch vụ trợ năng. Bộ theo dõi chạy nền với một thông báo nhỏ, bạn có thể tắt Tau trong mục trợ năng.", 12f, false, mut))
         if (!running) {
-            st.addView(tv("Redmi hay tắt ngầm dịch vụ khi bạn vuốt tắt app hoặc khi bị hạn chế pin. Bấm khởi động lại, rồi làm các bước ở thẻ Giữ dịch vụ luôn chạy bên dưới.", 12f, false, mut))
-            st.addView(btn("Khởi động lại dịch vụ") { restartService() })
+            st.addView(tv("Redmi hay tắt ngầm khi bạn vuốt tắt app hoặc bị hạn chế pin. Bấm khởi động, rồi làm các bước ở thẻ Giữ chạy luôn bên dưới.", 12f, false, mut))
+            st.addView(btn("Khởi động bộ theo dõi") {
+                MonitorService.start(this)
+                h.postDelayed({ buildFocus() }, 1500)
+            })
         }
         val slog = Store.p(this).getString("svc_log", null)
-        if (slog != null) st.addView(tv("Nhật ký dịch vụ:\n$slog", 11f, false, mut))
+        if (slog != null) st.addView(tv("Nhật ký:\n$slog", 11f, false, mut))
         val lastPkg = Store.p(this).getString("last_pkg", null)
         val lastT = Store.p(this).getLong("last_t", 0L)
         st.addView(
             tv(
-                if (lastPkg == null) "Chưa nhận được sự kiện nào từ hệ thống. Hãy mở một app khác rồi quay lại đây."
-                else "Sự kiện gần nhất: ${T.hms(lastT)} · $lastPkg",
+                if (lastPkg == null) "Chưa ghi nhận app nào. Hãy mở một app khác rồi quay lại đây."
+                else "App gần nhất: ${T.hms(lastT)} · $lastPkg",
                 12f, false, mut
             )
         )
@@ -659,7 +730,7 @@ class MainActivity : Activity() {
         if (err != null) st.addView(tv("Lỗi gần nhất: $err", 12f, false, Color.RED))
         st.addView(tv("Ô thời gian: " + (Store.p(this).getString("pill_state", null) ?: "chưa có thông tin"), 12f, false, mut))
         if (!Settings.canDrawOverlays(this)) {
-            st.addView(tv("Nếu ô thời gian hoặc màn hình chặn không hiện, hãy cấp thêm quyền hiển thị trên app khác.", 12f, false, mut))
+            st.addView(tv("Chưa cấp quyền hiển thị trên app khác. Quyền này bắt buộc để hiện ô thời gian và màn hình chặn.", 12f, false, Color.RED))
             st.addView(btn("Cấp quyền hiển thị trên app khác") {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             })
@@ -667,20 +738,19 @@ class MainActivity : Activity() {
             st.addView(tv("Quyền hiển thị trên app khác: đã cấp", 12f, false, mut))
         }
         st.addView(btn("Hiện thử ô thời gian") {
-            val svc = BlockerService.inst
+            val svc = MonitorService.inst
             if (svc == null) {
-                Toast.makeText(this, "Dịch vụ chặn app chưa chạy. Hãy bật ở cài đặt trợ năng.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Bộ theo dõi chưa chạy. Bấm Khởi động bộ theo dõi.", Toast.LENGTH_LONG).show()
             } else {
                 svc.demo()
                 Toast.makeText(this, "Nhìn ô cam ở góc màn hình trong vài giây", Toast.LENGTH_LONG).show()
             }
         })
-        if (!running) st.addView(btn("Mở cài đặt trợ năng") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) })
         if (!Usage.hasAccess(this)) st.addView(btn("Cấp quyền xem thời gian dùng") { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) })
         ll.addView(st)
 
         val kc = card()
-        kc.addView(tv("Giữ dịch vụ luôn chạy (Redmi)", 16f, true))
+        kc.addView(tv("Giữ chạy luôn (Redmi)", 16f, true))
         kc.addView(tv("1. Mở màn hình đa nhiệm, nhấn giữ thẻ Tau và bấm biểu tượng khoá.\n2. Bật Tự khởi động cho Tau.\n3. Đặt Tiết kiệm pin của Tau là Không hạn chế.\nSau đó đừng vuốt tắt Tau khỏi màn hình đa nhiệm.", 12f, false, mut))
         kc.addView(btn("Mở cài đặt Tự khởi động") {
             openFirst(listOf(Intent().setComponent(ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"))))
@@ -694,6 +764,17 @@ class MainActivity : Activity() {
             )
         })
         ll.addView(kc)
+
+        val lk = card()
+        lk.addView(tv("Thời gian khoá app", 16f, true))
+        lk.addView(tv("Khi app bị chặn: màn hình chặn đếm ngược, hết đếm thì cho dùng, hết giờ dùng thì khoá lại. Âm thanh bị tắt trong lúc khoá.", 12f, false, mut))
+        lk.addView(btn("Chờ trước khi mở: ${MonitorService.fmtSec(Store.waitSec(this))}") {
+            askSec("Số giây chờ trước khi mở", Store.waitSec(this), 3, 600) { Store.setWaitSec(this, it); buildFocus() }
+        })
+        lk.addView(btn("Được dùng: ${MonitorService.fmtSec(Store.openSec(this))}") {
+            askSec("Số giây được dùng trước khi khoá lại", Store.openSec(this), 10, 3600) { Store.setOpenSec(this, it); buildFocus() }
+        })
+        ll.addView(lk)
 
         val oc = card()
         val osw = Switch(this)
@@ -757,7 +838,7 @@ class MainActivity : Activity() {
             updateFocusLabel()
         }, LinearLayout.LayoutParams(0, -2, 1f))
         tc.addView(row)
-        tc.addView(tv("Chỉ chặn các app được tick bên dưới. Khi bị chặn: màn hình chặn đếm ngược 15 giây, sau đó mở 1 phút, rồi khoá lại.", 12f, false, mut))
+        tc.addView(tv("Chỉ chặn các app được tick bên dưới. Khi bị chặn: đếm ngược ${MonitorService.fmtSec(Store.waitSec(this))}, mở ${MonitorService.fmtSec(Store.openSec(this))}, rồi khoá lại.", 12f, false, mut))
         ll.addView(tc)
         updateFocusLabel()
 
@@ -783,7 +864,7 @@ class MainActivity : Activity() {
             .setView(box)
             .setPositiveButton("Lưu") { _, _ ->
                 Store.setEntLimit(this, et.text.toString().toIntOrNull() ?: 0)
-                buildFocus()
+                refresh()
             }
             .setNegativeButton("Huỷ", null)
             .show()
@@ -797,7 +878,27 @@ class MainActivity : Activity() {
             .setMultiChoiceItems(names, checked) { _, i, v -> checked[i] = v }
             .setPositiveButton("Lưu") { _, _ ->
                 Ent.saveChoice(this, apps.map { it.pkg }, checked)
-                buildFocus()
+                refresh()
+            }
+            .setNegativeButton("Huỷ", null)
+            .show()
+    }
+
+    private fun askSec(title: String, cur: Int, min: Int, max: Int, ok: (Int) -> Unit) {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), 0)
+        val et = EditText(this)
+        et.inputType = InputType.TYPE_CLASS_NUMBER
+        et.hint = "Từ $min đến $max giây"
+        et.setText(cur.toString())
+        box.addView(et)
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(box)
+            .setPositiveButton("Lưu") { _, _ ->
+                val v = et.text.toString().toIntOrNull() ?: cur
+                ok(Math.max(min, Math.min(max, v)))
             }
             .setNegativeButton("Huỷ", null)
             .show()

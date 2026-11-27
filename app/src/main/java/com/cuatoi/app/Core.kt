@@ -1,6 +1,5 @@
 package com.cuatoi.app
 
-import android.accessibilityservice.AccessibilityService
 import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.app.Notification
@@ -35,7 +34,6 @@ import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
-import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
@@ -135,6 +133,18 @@ object Store {
     fun entOn(c: Context): Set<String> = p(c).getStringSet("ent_on", emptySet()) ?: emptySet()
 
     fun entOff(c: Context): Set<String> = p(c).getStringSet("ent_off", emptySet()) ?: emptySet()
+
+    fun waitSec(c: Context): Int = p(c).getInt("wait_sec", 15)
+
+    fun openSec(c: Context): Int = p(c).getInt("open_sec", 60)
+
+    fun setWaitSec(c: Context, v: Int) {
+        p(c).edit().putInt("wait_sec", v).apply()
+    }
+
+    fun setOpenSec(c: Context, v: Int) {
+        p(c).edit().putInt("open_sec", v).apply()
+    }
 
     fun setLast(c: Context, pkg: String) {
         p(c).edit().putString("last_pkg", pkg).putLong("last_t", System.currentTimeMillis()).apply()
@@ -250,6 +260,24 @@ object Usage {
                 val a = Math.max(s.start, dayStart + h * 3600000L)
                 val b = Math.min(s.end, dayStart + (h + 1) * 3600000L)
                 if (b > a) out[h] += (b - a) / 60000.0
+            }
+        }
+        return out
+    }
+
+    /** Chia các phiên dùng vào 48 khung 30 phút của một ngày, mỗi khung là app và số mili giây. */
+    fun slots(l: List<Session>, dayStart: Long, ok: Set<String>): Array<HashMap<String, Long>> {
+        val out = Array(48) { HashMap<String, Long>() }
+        for (s in l) {
+            if (!ok.contains(s.pkg)) continue
+            var a = Math.max(s.start, dayStart)
+            val end = Math.min(s.end, dayStart + 86400000L)
+            while (a < end) {
+                val i = ((a - dayStart) / 1800000L).toInt()
+                if (i > 47) break
+                val b = Math.min(end, dayStart + (i + 1) * 1800000L)
+                out[i][s.pkg] = (out[i][s.pkg] ?: 0L) + (b - a)
+                a = b
             }
         }
         return out
@@ -460,6 +488,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         Health.scheduleAll(c)
         Reminders.restore(c)
+        if (i.action == Intent.ACTION_BOOT_COMPLETED || i.action == Intent.ACTION_MY_PACKAGE_REPLACED) MonitorService.start(c)
     }
 }
 
@@ -524,458 +553,3 @@ object Ent {
     }
 }
 
-/* ---------- Dịch vụ chặn app, màn hình chặn và ô thời gian nhỏ ---------- */
-class BlockerService : AccessibilityService() {
-    companion object {
-        @Volatile
-        var inst: BlockerService? = null
-    }
-
-    private var current = ""
-    private var lastSaved = ""
-    private var home: String? = null
-    private var imes: Set<String> = emptySet()
-    private var sysAt = 0L
-
-    private var accAt = 0L
-    private var evFrom = 0L
-    private var lastPoll = 0L
-    private var demoUntil = 0L
-    private var lastState = ""
-
-    private var pill: TextView? = null
-    private var pillPos = -1
-
-    private var blockRoot: View? = null
-    private var blockPkg = ""
-    private var cdView: TextView? = null
-    private val gates = HashMap<String, Gate>()
-
-    // Số liệu của app đang mở, làm mới mỗi 5 giây
-    private var stPkg = ""
-    private var stAt = 0L
-    private var stUsed = 0L
-    private var stLim = 0
-    private var stEnt = false
-    private var stEntUsed = 0L
-    private var stEntLim = 0
-
-    private val h = Handler(Looper.getMainLooper())
-    private val loop = object : Runnable {
-        override fun run() {
-            tickOnce()
-            h.postDelayed(this, if (blockRoot != null) 250L else 1000L)
-        }
-    }
-
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-        inst = this
-        Store.logSvc(this, "dịch vụ kết nối (pid ${Process.myPid()})")
-        keepAlive()
-        refreshSys(true)
-        h.removeCallbacks(loop)
-        h.post(loop)
-    }
-
-    override fun onUnbind(intent: Intent?): Boolean {
-        inst = null
-        Store.logSvc(this, "dịch vụ bị hệ thống ngắt")
-        return super.onUnbind(intent)
-    }
-
-    /** Chạy nền kèm một thông báo nhỏ để HyperOS ít tắt ngầm hơn. Lỗi thì bỏ qua. */
-    private fun keepAlive() {
-        try {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.createNotificationChannel(
-                NotificationChannel("tau_keep", "Dịch vụ chặn app", NotificationManager.IMPORTANCE_MIN)
-            )
-            val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-            val n = Notification.Builder(this, "tau_keep")
-                .setSmallIcon(R.drawable.ic_tau_fg)
-                .setContentTitle("Tau đang chạy")
-                .setContentText("Theo dõi thời gian dùng app")
-                .setContentIntent(open)
-                .setOngoing(true)
-                .build()
-            startForeground(77, n)
-            Store.logSvc(this, "giữ chạy nền: ok")
-        } catch (t: Throwable) {
-            Store.logSvc(this, "giữ chạy nền: lỗi ${t.javaClass.simpleName}")
-        }
-    }
-
-    /** Hiện thử ô thời gian khoảng 8 giây, bất kể đang ở app nào. */
-    fun demo() {
-        demoUntil = System.currentTimeMillis() + 8000L
-        h.post { tickOnce() }
-    }
-
-    private fun refreshSys(force: Boolean) {
-        val now = System.currentTimeMillis()
-        if (!force && now - sysAt < 60000L) return
-        sysAt = now
-        home = packageManager.resolveActivity(
-            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0
-        )?.activityInfo?.packageName
-        try {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imes = imm.enabledInputMethodList.map { it.packageName }.toSet()
-        } catch (e: Exception) {
-        }
-    }
-
-    override fun onAccessibilityEvent(e: AccessibilityEvent?) {
-        try {
-            if (e == null || e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-            val pkg = e.packageName?.toString() ?: return
-            val cn = e.className?.toString() ?: ""
-            // Cửa sổ lớp phủ do chính Tau vẽ thì bỏ qua, chỉ màn hình chính của Tau mới tính
-            if (pkg == packageName && !cn.endsWith("MainActivity")) return
-            accAt = System.currentTimeMillis()
-            if (pkg != lastSaved) {
-                lastSaved = pkg
-                Store.setLast(this, pkg)
-            }
-            applyForeground(pkg)
-            tickOnce()
-        } catch (t: Throwable) {
-            Store.setErr(this, t.toString())
-        }
-    }
-
-    /** Dùng chung cho sự kiện trợ năng và dữ liệu sử dụng. */
-    private fun applyForeground(pkg: String) {
-        refreshSys(false)
-        if (pkg == packageName || pkg == home) {
-            setCurrent("")
-            return
-        }
-        // Bàn phím và các cửa sổ hệ thống không có biểu tượng app thì không đổi app hiện tại
-        if (imes.contains(pkg)) return
-        if (packageManager.getLaunchIntentForPackage(pkg) == null) return
-        setCurrent(pkg)
-    }
-
-    /**
-     * Cách thứ hai để biết app nào đang mở, phòng khi sự kiện trợ năng không đến.
-     * Chỉ nhận sự kiện mới hơn sự kiện trợ năng gần nhất để hai nguồn không giẫm lên nhau.
-     */
-    private fun pollForeground(now: Long) {
-        if (!Usage.hasAccess(this)) return
-        if (evFrom == 0L) evFrom = now - 3000L
-        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val ev = usm.queryEvents(evFrom, now) ?: return
-        evFrom = now - 300L
-        val e = UsageEvents.Event()
-        var fg: String? = null
-        while (ev.hasNextEvent()) {
-            ev.getNextEvent(e)
-            if (e.timeStamp <= accAt) continue
-            if (e.eventType == 1) fg = e.packageName
-        }
-        if (fg != null) applyForeground(fg)
-    }
-
-    private fun setCurrent(p: String) {
-        if (p == current) return
-        gates[current]?.leave()
-        current = p
-        hideBlock()
-        if (p.isEmpty()) hidePill()
-    }
-
-    private fun gate(pkg: String): Gate = gates.getOrPut(pkg) { Gate() }
-
-    private fun screenOn(): Boolean {
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-        return pm.isInteractive && !km.isKeyguardLocked
-    }
-
-    private fun pillState(s: String) {
-        if (s == lastState) return
-        lastState = s
-        Store.p(this).edit().putString("pill_state", T.hms(System.currentTimeMillis()) + " · " + s).apply()
-    }
-
-    /** 0 = không hạn chế, 1 = hết thời gian giới hạn, 2 = đang tập trung. */
-    private fun reasonFor(pkg: String, now: Long): Int {
-        if (now < Store.focusEnd(this) && Store.focusApps(this).contains(pkg)) return 2
-        if (!Usage.hasAccess(this)) return 0
-        if (pkg != stPkg || now - stAt >= 5000L) refreshStats(pkg, now)
-        val el = now - stAt
-        val hitApp = stLim > 0 && (stUsed + el) / 60000L >= stLim
-        val hitEnt = stEnt && (stEntUsed + el) / 60000L >= stEntLim
-        return if (hitApp || hitEnt) 1 else 0
-    }
-
-    private fun refreshStats(pkg: String, now: Long) {
-        stPkg = pkg
-        stAt = now
-        stLim = Store.limitMin(this, pkg)
-        stEntLim = Store.entLimit(this)
-        val ent = Ent.set(this)
-        stEnt = stEntLim > 0 && ent.contains(pkg)
-        var u = 0L
-        var eu = 0L
-        for (s in Usage.sessions(this, T.dayStart(now), now)) {
-            val d = s.end - s.start
-            if (s.pkg == pkg) u += d
-            if (stEnt && ent.contains(s.pkg)) eu += d
-        }
-        stUsed = u
-        stEntUsed = eu
-    }
-
-    private fun pillText(pkg: String, now: Long): String {
-        val el = if (pkg == stPkg) now - stAt else 0L
-        if (stLim > 0) return "${T.fmt(stUsed + el)} / ${stLim}p"
-        if (stEnt) return "Giải trí ${T.fmt(stEntUsed + el)} / ${stEntLim}p"
-        return T.fmt(stUsed + el)
-    }
-
-    private fun tickOnce() {
-        try {
-            val now = System.currentTimeMillis()
-            val on = screenOn()
-            if (on && now - lastPoll >= 1000L) {
-                lastPoll = now
-                pollForeground(now)
-            }
-            if (now < demoUntil) {
-                showPill("Ô thời gian đang hoạt động")
-                pillState("đang chạy thử")
-                return
-            }
-            val pkg = current
-            if (pkg.isEmpty()) {
-                hidePill()
-                hideBlock()
-                pillState("ẩn: đang ở màn hình chính hoặc trong Tau")
-                return
-            }
-            if (!on && blockRoot == null) {
-                hidePill()
-                pillState("ẩn: màn hình đang tắt hoặc khoá")
-                return
-            }
-            val reason = reasonFor(pkg, now)
-            val st = gate(pkg).step(now, reason != 0, on)
-            when (st.phase) {
-                Gate.Phase.FREE -> {
-                    hideBlock()
-                    if (!Store.p(this).getBoolean("overlay_on", true)) {
-                        hidePill()
-                        pillState("ẩn: đã tắt trong cài đặt")
-                    } else if (!Usage.hasAccess(this)) {
-                        hidePill()
-                        pillState("ẩn: chưa cấp quyền xem thời gian dùng")
-                    } else {
-                        showPill(pillText(pkg, now))
-                        pillState("đang hiện cho $pkg")
-                    }
-                }
-                Gate.Phase.COUNTDOWN -> {
-                    showBlock(pkg, reason)
-                    cdView?.text = ((st.leftMs + 999L) / 1000L).toString()
-                    pillState("đang hiện màn hình chặn cho $pkg")
-                }
-                Gate.Phase.UNLOCKED -> {
-                    hideBlock()
-                    showPill("Khoá lại sau ${(st.leftMs + 999L) / 1000L}s")
-                    pillState("đang mở khoá 1 phút cho $pkg")
-                }
-            }
-        } catch (t: Throwable) {
-            Store.setErr(this, t.toString())
-            pillState("lỗi: ${t.javaClass.simpleName} ${t.message}")
-        }
-    }
-
-    /* ----- Cách vẽ lớp phủ: ưu tiên "hiển thị trên app khác" nếu đã cấp, không thì lớp phủ trợ năng ----- */
-    private fun useApp(): Boolean = Build.VERSION.SDK_INT >= 26 && Settings.canDrawOverlays(this)
-
-    private fun overlayType(): Int =
-        if (useApp()) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-
-    private fun wm(): WindowManager {
-        val c: Context = if (useApp()) applicationContext else this
-        return c.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    }
-
-    /* ----- Màn hình chặn toàn màn hình ----- */
-    private fun blockParams(): WindowManager.LayoutParams {
-        val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        )
-        if (Build.VERSION.SDK_INT >= 28) {
-            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
-        return lp
-    }
-
-    private fun buildBlock(pkg: String, reason: Int): View {
-        val d = resources.displayMetrics.density
-        fun px(v: Int): Int = (v * d).toInt()
-        val label = try {
-            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-        } catch (e: Exception) {
-            pkg
-        }
-        val root = FrameLayout(this)
-        root.isClickable = true // nuốt mọi chạm, không cho thao tác app bên dưới
-        root.addView(TauBg(this), FrameLayout.LayoutParams(-1, -1))
-
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.gravity = Gravity.CENTER
-        col.setPadding(px(28), px(56), px(28), px(56))
-        root.addView(col, FrameLayout.LayoutParams(-1, -1))
-
-        fun text(t: String, size: Float, bold: Boolean, alpha: Float): TextView {
-            val v = TextView(this)
-            v.text = t
-            v.textSize = size
-            v.setTextColor(Color.WHITE)
-            v.alpha = alpha
-            v.gravity = Gravity.CENTER
-            if (bold) v.typeface = Typeface.DEFAULT_BOLD
-            return v
-        }
-
-        col.addView(
-            text(
-                if (reason == 2) "Bạn đang trong chế độ tập trung" else "Bạn đã sử dụng hết thời gian giới hạn",
-                24f, true, 1f
-            )
-        )
-        val name = text(label, 16f, false, 0.85f)
-        name.setPadding(0, px(8), 0, 0)
-        col.addView(name)
-        val cd = text("15", 96f, true, 1f)
-        cd.setPadding(0, px(24), 0, px(24))
-        col.addView(cd)
-        cdView = cd
-        col.addView(text("Hết đếm ngược, bạn được dùng app đúng 1 phút rồi app tự khoá lại.", 14f, false, 0.9f))
-
-        val b = Button(this)
-        b.text = "Về màn hình chính"
-        b.isAllCaps = false
-        b.setTextColor(Color.parseColor("#C2410C"))
-        val g = GradientDrawable()
-        g.setColor(Color.WHITE)
-        g.cornerRadius = px(24).toFloat()
-        b.background = g
-        b.setOnClickListener { performGlobalAction(GLOBAL_ACTION_HOME) }
-        val lp = LinearLayout.LayoutParams(-2, -2)
-        lp.topMargin = px(28)
-        col.addView(b, lp)
-        return root
-    }
-
-    private fun showBlock(pkg: String, reason: Int) {
-        if (blockRoot != null && blockPkg == pkg) return
-        hideBlock()
-        hidePill()
-        try {
-            val v = buildBlock(pkg, reason)
-            wm().addView(v, blockParams())
-            blockRoot = v
-            blockPkg = pkg
-        } catch (t: Throwable) {
-            // Không vẽ được màn hình chặn thì đẩy người dùng về màn hình chính
-            Store.setErr(this, "Không hiện được màn hình chặn: $t")
-            cdView = null
-            performGlobalAction(GLOBAL_ACTION_HOME)
-        }
-    }
-
-    private fun hideBlock() {
-        val v = blockRoot ?: return
-        try {
-            wm().removeView(v)
-        } catch (e: Exception) {
-        }
-        blockRoot = null
-        blockPkg = ""
-        cdView = null
-    }
-
-    /* ----- Ô thời gian nhỏ ----- */
-    private fun params(pos: Int): WindowManager.LayoutParams {
-        val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        )
-        val d = resources.displayMetrics.density
-        lp.gravity = when (pos) {
-            1 -> Gravity.TOP or Gravity.START
-            2 -> Gravity.BOTTOM or Gravity.END
-            3 -> Gravity.BOTTOM or Gravity.START
-            else -> Gravity.TOP or Gravity.END
-        }
-        lp.x = (8 * d).toInt()
-        lp.y = if (pos >= 2) (72 * d).toInt() else (52 * d).toInt()
-        return lp
-    }
-
-    private fun showPill(txt: String) {
-        val pos = Store.p(this).getInt("overlay_pos", 0)
-        var v = pill
-        if (v == null) {
-            val d = resources.displayMetrics.density
-            val tv = TextView(this)
-            tv.setTextColor(Color.WHITE)
-            tv.textSize = 14f
-            tv.typeface = Typeface.DEFAULT_BOLD
-            tv.setPadding((12 * d).toInt(), (7 * d).toInt(), (12 * d).toInt(), (7 * d).toInt())
-            val g = GradientDrawable()
-            g.setColor(Color.parseColor("#F26B1D"))
-            g.setStroke((2 * d).toInt(), Color.WHITE)
-            g.cornerRadius = 18 * d
-            tv.background = g
-            wm().addView(tv, params(pos))
-            pill = tv
-            pillPos = pos
-            v = tv
-        } else if (pillPos != pos) {
-            wm().updateViewLayout(v, params(pos))
-            pillPos = pos
-        }
-        v.text = txt
-    }
-
-    private fun hidePill() {
-        val v = pill ?: return
-        try {
-            wm().removeView(v)
-        } catch (e: Exception) {
-        }
-        pill = null
-    }
-
-    override fun onInterrupt() {}
-
-    override fun onDestroy() {
-        inst = null
-        Store.logSvc(this, "dịch vụ bị huỷ")
-        h.removeCallbacks(loop)
-        hidePill()
-        hideBlock()
-        super.onDestroy()
-    }
-}
