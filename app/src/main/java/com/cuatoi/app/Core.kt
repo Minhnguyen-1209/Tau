@@ -134,6 +134,23 @@ object Store {
 
     fun entOff(c: Context): Set<String> = p(c).getStringSet("ent_off", emptySet()) ?: emptySet()
 
+    fun bedOn(c: Context): Boolean = p(c).getBoolean("bed_on", false)
+
+    fun bedStart(c: Context): Int = p(c).getInt("bed_s", 23 * 60)
+
+    fun bedEnd(c: Context): Int = p(c).getInt("bed_e", 6 * 60)
+
+    /** Đang trong giờ đi ngủ (qua nửa đêm cũng đúng). */
+    fun bedActive(c: Context, now: Long): Boolean {
+        if (!bedOn(c)) return false
+        val m = ((now - T.dayStart(now)) / 60000L).toInt()
+        val s = bedStart(c)
+        val e = bedEnd(c)
+        return if (s <= e) m in s until e else (m >= s || m < e)
+    }
+
+    fun goalMin(c: Context): Int = p(c).getInt("goal_min", 0)
+
     fun waitSec(c: Context): Int = p(c).getInt("wait_sec", 15)
 
     fun openSec(c: Context): Int = p(c).getInt("open_sec", 60)
@@ -281,6 +298,19 @@ object Usage {
             }
         }
         return out
+    }
+
+    /** Số lần bật màn hình trong khoảng thời gian. */
+    fun screenOns(c: Context, from: Long, to: Long): Int {
+        val usm = c.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val ev = usm.queryEvents(from, to) ?: return 0
+        val e = UsageEvents.Event()
+        var n = 0
+        while (ev.hasNextEvent()) {
+            ev.getNextEvent(e)
+            if (e.eventType == 15) n++
+        }
+        return n
     }
 
     fun todayMs(c: Context, pkg: String): Long {

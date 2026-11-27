@@ -267,6 +267,7 @@ class MonitorService : Service() {
     /** 0 = không hạn chế, 1 = hết thời gian giới hạn, 2 = đang tập trung. */
     private fun reasonFor(pkg: String, now: Long): Int {
         if (now < Store.focusEnd(this) && Store.focusApps(this).contains(pkg)) return 2
+        if (Store.bedActive(this, now) && Ent.set(this).contains(pkg)) return 3
         if (!Usage.hasAccess(this)) return 0
         if (pkg != stPkg || now - stAt >= 5000L) refreshStats(pkg, now)
         val el = now - stAt
@@ -309,6 +310,7 @@ class MonitorService : Service() {
         }
         poll(now)
         applyForeground(now)
+        checkGoal(now)
         val fe = Store.focusEnd(this)
         if (fe > 0L && now >= fe) {
             Store.setFocusEnd(this, 0L)
@@ -380,6 +382,27 @@ class MonitorService : Service() {
                 if (canDraw()) showPill("Khoá lại sau ${(st.leftMs + 999L) / 1000L}s")
                 pillState("đang mở khoá ${MonitorService.fmtSec(Store.openSec(this))} cho $pkg")
             }
+        }
+    }
+
+    private var goalAt = 0L
+
+    /** Mỗi phút kiểm tra tổng thời gian hôm nay so với mục tiêu, báo một lần khi vượt. */
+    private fun checkGoal(now: Long) {
+        val goal = Store.goalMin(this)
+        if (goal <= 0 || now - goalAt < 60000L || !Usage.hasAccess(this)) return
+        goalAt = now
+        val key = T.key(now)
+        if (Store.p(this).getString("goal_notified", "") == key) return
+        var tot = 0L
+        refreshSys(now)
+        for (s in Usage.sessions(this, T.dayStart(now), now)) {
+            if (s.pkg == packageName || s.pkg == home || imes.contains(s.pkg) || !isLaunchable(s.pkg)) continue
+            tot += s.end - s.start
+        }
+        if (tot >= goal * 60000L) {
+            Store.p(this).edit().putString("goal_notified", key).apply()
+            Notif.show(this, 91, "Đã đủ mục tiêu hôm nay", "Bạn đã dùng điện thoại ${T.fmt(tot)}, vượt mục tiêu $goal phút.")
         }
     }
 
@@ -492,7 +515,11 @@ class MonitorService : Service() {
 
         col.addView(
             text(
-                if (reason == 2) "Bạn đang trong chế độ tập trung" else "Bạn đã sử dụng hết thời gian giới hạn",
+                when (reason) {
+                    2 -> "Bạn đang trong chế độ tập trung"
+                    3 -> "Đã đến giờ đi ngủ, hãy cất điện thoại"
+                    else -> "Bạn đã sử dụng hết thời gian giới hạn"
+                },
                 24f, true, 1f
             )
         )

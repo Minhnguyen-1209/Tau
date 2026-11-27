@@ -480,6 +480,27 @@ class MainActivity : Activity() {
         c1.addView(tv(T.fmt(sum), 32f, true))
         val yt = Usage.dayTotal(this, T.addDays(t0, -1))
         if (yt > 0) c1.addView(tv("Hôm qua cả ngày: ${T.fmt(yt)}", 13f, false, mut))
+        try {
+            c1.addView(tv("Số lần bật màn hình: ${Usage.screenOns(this, t0, now)}", 13f, false, mut))
+        } catch (e: Exception) {
+        }
+        val goal = Store.goalMin(this)
+        if (goal > 0) {
+            var streak = 0
+            for (i in 1..60) {
+                val tt = Usage.dayTotal(this, T.addDays(t0, -i))
+                if (tt <= 0L || tt > goal * 60000L) break
+                streak++
+            }
+            val under = sum <= goal * 60000L
+            c1.addView(
+                tv(
+                    "Mục tiêu $goal phút: " + (if (under) "còn ${T.fmt(goal * 60000L - sum)}" else "đã vượt ${T.fmt(sum - goal * 60000L)}") +
+                        (if (streak > 0) " · chuỗi $streak ngày đạt" else ""),
+                    13f, false, if (under) Color.parseColor("#15803D") else Color.RED
+                )
+            )
+        }
         ll.addView(c1)
 
         entCard(ll, tot, ent, 1, Store.loadDay(this, T.key(T.addDays(t0, -1))), 1)
@@ -781,6 +802,33 @@ class MainActivity : Activity() {
         })
         ll.addView(kc)
 
+        val bc = card()
+        val bsw = Switch(this)
+        bsw.text = "Giờ đi ngủ"
+        bsw.textSize = 16f
+        bsw.isChecked = Store.bedOn(this)
+        bsw.setOnCheckedChangeListener { _, v -> Store.p(this).edit().putBoolean("bed_on", v).apply() }
+        bc.addView(bsw)
+        bc.addView(tv("Trong khoảng này các app giải trí bị khoá theo chu kỳ đếm ngược như bình thường, để bạn buông điện thoại đi ngủ.", 12f, false, mut))
+        bc.addView(btn("Bắt đầu: ${T.mm(Store.bedStart(this))}") {
+            val s0 = Store.bedStart(this)
+            TimePickerDialog(this, { _, hh, mm -> Store.p(this).edit().putInt("bed_s", hh * 60 + mm).apply(); buildFocus() }, s0 / 60, s0 % 60, true).show()
+        })
+        bc.addView(btn("Kết thúc: ${T.mm(Store.bedEnd(this))}") {
+            val e0 = Store.bedEnd(this)
+            TimePickerDialog(this, { _, hh, mm -> Store.p(this).edit().putInt("bed_e", hh * 60 + mm).apply(); buildFocus() }, e0 / 60, e0 % 60, true).show()
+        })
+        ll.addView(bc)
+
+        val gc = card()
+        gc.addView(tv("Mục tiêu mỗi ngày", 16f, true))
+        gc.addView(tv("Đặt tổng số phút tối đa dùng điện thoại mỗi ngày. Vượt thì Tau báo, đạt liên tiếp nhiều ngày thì có chuỗi ở tab Thời gian.", 12f, false, mut))
+        val gm = Store.goalMin(this)
+        gc.addView(btn(if (gm > 0) "Mục tiêu: $gm phút" else "Đặt mục tiêu") {
+            askNum("Mục tiêu (phút mỗi ngày), 0 = tắt", "Số phút", gm, 0, 1440) { Store.p(this).edit().putInt("goal_min", it).apply(); buildFocus() }
+        })
+        ll.addView(gc)
+
         val lk = card()
         lk.addView(tv("Thời gian khoá app", 16f, true))
         lk.addView(tv("Khi app bị chặn: màn hình chặn đếm ngược, hết đếm thì cho dùng, hết giờ dùng thì khoá lại. Âm thanh bị tắt trong lúc khoá.", 12f, false, mut))
@@ -914,6 +962,25 @@ class MainActivity : Activity() {
             .setPositiveButton("Lưu") { _, _ ->
                 Ent.saveChoice(this, apps.map { it.pkg }, checked)
                 refresh()
+            }
+            .setNegativeButton("Huỷ", null)
+            .show()
+    }
+
+    private fun askNum(title: String, hint: String, cur: Int, min: Int, max: Int, ok: (Int) -> Unit) {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), 0)
+        val et = EditText(this)
+        et.inputType = InputType.TYPE_CLASS_NUMBER
+        et.hint = hint
+        if (cur > 0) et.setText(cur.toString())
+        box.addView(et)
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(box)
+            .setPositiveButton("Lưu") { _, _ ->
+                ok(Math.max(min, Math.min(max, et.text.toString().toIntOrNull() ?: 0)))
             }
             .setNegativeButton("Huỷ", null)
             .show()
