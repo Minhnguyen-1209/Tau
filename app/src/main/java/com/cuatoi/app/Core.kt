@@ -144,6 +144,13 @@ object Store {
         p(c).edit().putString("last_err", msg).apply()
     }
 
+    /** Nhật ký ngắn về vòng đời dịch vụ (giữ 6 dòng gần nhất) để biết dịch vụ bị tắt lúc nào. */
+    fun logSvc(c: Context, msg: String) {
+        val old = p(c).getString("svc_log", "") ?: ""
+        val lines = (old.split("\n").filter { it.isNotEmpty() } + (T.hms(System.currentTimeMillis()) + " " + msg)).takeLast(6)
+        p(c).edit().putString("svc_log", lines.joinToString("\n")).apply()
+    }
+
     fun saveDay(c: Context, key: String, m: Map<String, Long>) {
         val o = JSONObject()
         for ((k, v) in m) o.put(k, v)
@@ -564,6 +571,8 @@ class BlockerService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         inst = this
+        Store.logSvc(this, "dịch vụ kết nối (pid ${Process.myPid()})")
+        keepAlive()
         refreshSys(true)
         h.removeCallbacks(loop)
         h.post(loop)
@@ -571,7 +580,30 @@ class BlockerService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         inst = null
+        Store.logSvc(this, "dịch vụ bị hệ thống ngắt")
         return super.onUnbind(intent)
+    }
+
+    /** Chạy nền kèm một thông báo nhỏ để HyperOS ít tắt ngầm hơn. Lỗi thì bỏ qua. */
+    private fun keepAlive() {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(
+                NotificationChannel("tau_keep", "Dịch vụ chặn app", NotificationManager.IMPORTANCE_MIN)
+            )
+            val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+            val n = Notification.Builder(this, "tau_keep")
+                .setSmallIcon(R.drawable.ic_tau_fg)
+                .setContentTitle("Tau đang chạy")
+                .setContentText("Theo dõi thời gian dùng app")
+                .setContentIntent(open)
+                .setOngoing(true)
+                .build()
+            startForeground(77, n)
+            Store.logSvc(this, "giữ chạy nền: ok")
+        } catch (t: Throwable) {
+            Store.logSvc(this, "giữ chạy nền: lỗi ${t.javaClass.simpleName}")
+        }
     }
 
     /** Hiện thử ô thời gian khoảng 8 giây, bất kể đang ở app nào. */
@@ -940,6 +972,7 @@ class BlockerService : AccessibilityService() {
 
     override fun onDestroy() {
         inst = null
+        Store.logSvc(this, "dịch vụ bị huỷ")
         h.removeCallbacks(loop)
         hidePill()
         hideBlock()

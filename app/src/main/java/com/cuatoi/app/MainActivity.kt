@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.TimePickerDialog
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -19,6 +20,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
@@ -216,6 +218,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Store.logSvc(this, "mở Tau (pid ${Process.myPid()})")
         window.statusBarColor = orange
         window.navigationBarColor = Color.WHITE
         loadApps()
@@ -267,6 +270,58 @@ class MainActivity : Activity() {
         loadApps()
         refresh()
         h.post(tick)
+        h.postDelayed({ autoFix() }, 3000)
+    }
+
+    private var lastFix = 0L
+
+    /** Dịch vụ bật trong cài đặt nhưng không chạy: thử đánh thức lại một lần mỗi 2 phút. */
+    private fun autoFix() {
+        if (BlockerService.inst == null && serviceOn() && System.currentTimeMillis() - lastFix > 120000L) {
+            lastFix = System.currentTimeMillis()
+            Store.logSvc(this, "tự khởi động lại dịch vụ")
+            restartService()
+        }
+    }
+
+    /** Tắt rồi bật lại thành phần dịch vụ để hệ thống gắn lại dịch vụ trợ năng. */
+    private fun restartService() {
+        try {
+            val cn = ComponentName(this, BlockerService::class.java)
+            packageManager.setComponentEnabledSetting(cn, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+            h.postDelayed({
+                try {
+                    packageManager.setComponentEnabledSetting(cn, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+                } catch (e: Exception) {
+                }
+                h.postDelayed({
+                    val ok = BlockerService.inst != null
+                    Toast.makeText(
+                        this,
+                        if (ok) "Dịch vụ đã chạy lại" else "Chưa chạy được. Vào cài đặt trợ năng, tắt rồi bật lại Tau.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    refresh()
+                }, 2000)
+            }, 700)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Không khởi động lại được: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun openFirst(list: List<Intent>) {
+        for (i in list) {
+            try {
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(i)
+                return
+            } catch (e: Exception) {
+            }
+        }
+        try {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        } catch (e: Exception) {
+        }
     }
 
     override fun onPause() {
@@ -576,12 +631,21 @@ class MainActivity : Activity() {
 
         val st = card()
         val on = serviceOn()
+        val running = BlockerService.inst != null
         st.addView(
             tv(
-                if (on) "Dịch vụ chặn app: đang bật" else "Dịch vụ chặn app: CHƯA bật",
-                15f, true, if (on) Color.parseColor("#15803D") else Color.RED
+                if (running) "Dịch vụ chặn app: đang chạy"
+                else if (on) "Dịch vụ chặn app: đã bật nhưng đang bị hệ thống tắt ngầm"
+                else "Dịch vụ chặn app: CHƯA bật",
+                15f, true, if (running) Color.parseColor("#15803D") else Color.RED
             )
         )
+        if (!running) {
+            st.addView(tv("Redmi hay tắt ngầm dịch vụ khi bạn vuốt tắt app hoặc khi bị hạn chế pin. Bấm khởi động lại, rồi làm các bước ở thẻ Giữ dịch vụ luôn chạy bên dưới.", 12f, false, mut))
+            st.addView(btn("Khởi động lại dịch vụ") { restartService() })
+        }
+        val slog = Store.p(this).getString("svc_log", null)
+        if (slog != null) st.addView(tv("Nhật ký dịch vụ:\n$slog", 11f, false, mut))
         val lastPkg = Store.p(this).getString("last_pkg", null)
         val lastT = Store.p(this).getLong("last_t", 0L)
         st.addView(
@@ -611,9 +675,25 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "Nhìn ô cam ở góc màn hình trong vài giây", Toast.LENGTH_LONG).show()
             }
         })
-        if (!on) st.addView(btn("Mở cài đặt trợ năng") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) })
+        if (!running) st.addView(btn("Mở cài đặt trợ năng") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) })
         if (!Usage.hasAccess(this)) st.addView(btn("Cấp quyền xem thời gian dùng") { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) })
         ll.addView(st)
+
+        val kc = card()
+        kc.addView(tv("Giữ dịch vụ luôn chạy (Redmi)", 16f, true))
+        kc.addView(tv("1. Mở màn hình đa nhiệm, nhấn giữ thẻ Tau và bấm biểu tượng khoá.\n2. Bật Tự khởi động cho Tau.\n3. Đặt Tiết kiệm pin của Tau là Không hạn chế.\nSau đó đừng vuốt tắt Tau khỏi màn hình đa nhiệm.", 12f, false, mut))
+        kc.addView(btn("Mở cài đặt Tự khởi động") {
+            openFirst(listOf(Intent().setComponent(ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"))))
+        })
+        kc.addView(btn("Mở cài đặt pin của Tau") {
+            openFirst(
+                listOf(
+                    Intent().setComponent(ComponentName("com.miui.powerkeeper", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"))
+                        .putExtra("package_name", packageName).putExtra("package_label", "Tau")
+                )
+            )
+        })
+        ll.addView(kc)
 
         val oc = card()
         val osw = Switch(this)
