@@ -109,6 +109,7 @@ class MainActivity : Activity() {
     private lateinit var lFocus: LinearLayout
     private lateinit var lHealth: LinearLayout
     private lateinit var web: WebView
+    private lateinit var gameWeb: WebView
     private lateinit var navItems: Array<TextView>
     private var tab = 0
     private var timeMode = 0
@@ -216,6 +217,18 @@ class MainActivity : Activity() {
         return w
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun makeGames(): WebView {
+        val w = WebView(this)
+        w.settings.javaScriptEnabled = true
+        w.settings.domStorageEnabled = true
+        w.webViewClient = WebViewClient()
+        w.setBackgroundColor(Color.TRANSPARENT)
+        val html = assets.open("games.html").bufferedReader().use { it.readText() }
+        w.loadDataWithBaseURL("https://tau.app/games/", html, "text/html", "utf-8", null)
+        return w
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Store.logSvc(this, "mở Tau (pid ${Process.myPid()})")
@@ -246,15 +259,17 @@ class MainActivity : Activity() {
         content.addView(sFocus, FrameLayout.LayoutParams(-1, -1))
         content.addView(sHealth, FrameLayout.LayoutParams(-1, -1))
         content.addView(web, FrameLayout.LayoutParams(-1, -1))
+        gameWeb = makeGames()
+        content.addView(gameWeb, FrameLayout.LayoutParams(-1, -1))
 
         val nav = LinearLayout(this)
         nav.setBackgroundColor(Color.WHITE)
-        val names = arrayOf("Thời gian", "Tập trung", "Sức khoẻ", "Tiện ích")
-        navItems = Array(4) { i ->
+        val names = arrayOf("Thời gian", "Tập trung", "Sức khoẻ", "Tiện ích", "Trò chơi")
+        navItems = Array(5) { i ->
             val t = TextView(this)
             t.text = names[i]
             t.gravity = Gravity.CENTER
-            t.textSize = 13f
+            t.textSize = 12f
             t.setPadding(0, dp(14), 0, dp(14))
             t.setOnClickListener { showTab(i) }
             nav.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
@@ -299,7 +314,7 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (tab == 3 && web.canGoBack()) web.goBack() else super.onBackPressed()
+        if (tab == 3 && web.canGoBack()) web.goBack() else if (tab == 4) showTab(0) else super.onBackPressed()
     }
 
     private fun showTab(i: Int) {
@@ -308,7 +323,8 @@ class MainActivity : Activity() {
         sFocus.visibility = if (i == 1) View.VISIBLE else View.GONE
         sHealth.visibility = if (i == 2) View.VISIBLE else View.GONE
         web.visibility = if (i == 3) View.VISIBLE else View.GONE
-        for (k in 0 until 4) {
+        gameWeb.visibility = if (i == 4) View.VISIBLE else View.GONE
+        for (k in 0 until 5) {
             navItems[k].setTextColor(if (k == i) deep else mut)
             navItems[k].typeface = if (k == i) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
@@ -834,10 +850,29 @@ class MainActivity : Activity() {
             row.addView(btn("${m}p") { startFocus(m) }, LinearLayout.LayoutParams(0, -2, 1f))
         }
         row.addView(btn("Dừng") {
-            Store.setFocusEnd(this, 0L)
-            updateFocusLabel()
+            if (Store.p(this).getBoolean("strict", false) && Store.focusEnd(this) > System.currentTimeMillis()) {
+                Toast.makeText(this, "Đang ở chế độ nghiêm ngặt: phải chờ hết giờ mới dừng được", Toast.LENGTH_LONG).show()
+            } else {
+                Store.setFocusEnd(this, 0L)
+                updateFocusLabel()
+            }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         tc.addView(row)
+        val ssw = Switch(this)
+        ssw.text = "Nghiêm ngặt: không cho dừng giữa chừng"
+        ssw.textSize = 14f
+        ssw.isChecked = Store.p(this).getBoolean("strict", false)
+        ssw.setOnCheckedChangeListener { _, v ->
+            if (!v && Store.focusEnd(this) > System.currentTimeMillis() && Store.p(this).getBoolean("strict", false)) {
+                ssw.isChecked = true
+                Toast.makeText(this, "Đang tập trung nên không tắt được chế độ nghiêm ngặt", Toast.LENGTH_LONG).show()
+            } else Store.p(this).edit().putBoolean("strict", v).apply()
+        }
+        tc.addView(ssw)
+        tc.addView(btn("Tick hết app giải trí để chặn") {
+            for (pk in Ent.set(this)) Store.setFocusApp(this, pk, true)
+            buildFocus()
+        })
         tc.addView(tv("Chỉ chặn các app được tick bên dưới. Khi bị chặn: đếm ngược ${MonitorService.fmtSec(Store.waitSec(this))}, mở ${MonitorService.fmtSec(Store.openSec(this))}, rồi khoá lại.", 12f, false, mut))
         ll.addView(tc)
         updateFocusLabel()

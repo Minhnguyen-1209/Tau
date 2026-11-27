@@ -309,6 +309,11 @@ class MonitorService : Service() {
         }
         poll(now)
         applyForeground(now)
+        val fe = Store.focusEnd(this)
+        if (fe > 0L && now >= fe) {
+            Store.setFocusEnd(this, 0L)
+            Notif.show(this, 90, "Hết giờ tập trung", "Làm tốt lắm! Các app đã được mở lại.")
+        }
         val on = screenOn()
 
         if (now < demoUntil) {
