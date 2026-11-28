@@ -102,6 +102,49 @@ if(xs.length>=5){var r=pearson(xs,ys);if(r<=-.3)h+='<div class="tip w">Ngày dù
 var lastN=ent.slice(-3);if(lastN.length==3&&lastN.every(function(e){return e.s<40}))h+='<div class="tip w">Ba ngày gần nhất điểm đều thấp. Hãy nói chuyện với một người bạn tin tưởng. Nếu cảm giác nặng nề kéo dài hơn hai tuần hoặc ảnh hưởng đến ăn ngủ, học và làm việc, nên gặp chuyên gia tâm lý hoặc bác sĩ.</div>';
 h+='<div class="mut" style="margin-top:8px">Đây là công cụ tự theo dõi, không phải chẩn đoán y khoa.</div></div>';$('adv').innerHTML=h}
 
+/* ---------- Hình minh hoạ động tác (người que, chạy lặp lại) ---------- */
+function P(hx,hy,t,a,l){return [hx,hy,t].concat(a,l)}
+var FS=P(100,110,0,[-10,-10,10,10],[-6,-6,6,6]),SS=P(100,110,0,[5,5,-5,-5],[2,2,-2,-2]);
+var SQ1=P(76,144,40,[85,90,85,90],[80,-20,80,-20]),PL0=P(109,153,65,[0,0,0,0],[-65,-65,-65,-65]),JUMP=P(100,86,0,[170,175,-170,-175],[0,0,0,0]);
+var ANI={
+jj:{d:900,f:[FS,P(100,104,0,[-150,-160,150,160],[-28,-28,28,28])]},
+run:{d:650,f:[P(100,106,10,[50,120,-50,-100],[85,5,-15,-60]),P(100,106,10,[-50,-100,50,120],[-15,-60,85,5])]},
+knees:{d:760,f:[P(100,104,0,[60,130,-30,-90],[95,0,0,0]),P(100,104,0,[-30,-90,60,130],[0,0,95,0])]},
+rope:{d:520,f:[P(100,110,0,[-30,-10,30,10],[-4,-4,4,4]),P(100,98,0,[-40,-65,40,65],[-4,-22,4,22])]},
+ropealt:{d:560,f:[P(100,104,0,[-35,-55,35,55],[30,-10,-5,-50]),P(100,104,0,[-35,-55,35,55],[-5,-50,30,-10])]},
+squat:{d:2200,f:[P(100,110,0,[5,5,-5,-5],[2,2,-2,-2]),SQ1]},
+squathold:{d:1600,f:[SQ1,P(76,141,40,[85,90,85,90],[80,-20,80,-20])]},
+squatjump:{d:1500,f:[SS,SQ1,JUMP]},
+lunge:{d:2200,f:[SS,P(100,141,0,[10,10,-10,-10],[80,-5,-20,-90])]},
+bridge:{d:2200,f:[P(112,172,-90,[90,90,90,90],[150,20,150,20]),P(112,150,-110,[90,90,90,90],[128,2,128,2])]},
+calf:{d:1400,f:[SS,P(100,102,0,[5,5,-5,-5],[2,2,-2,-2])]},
+pushup:{d:2200,f:[PL0,P(115,177,83,[-100,54,-100,54],[-83,-83,-83,-83])]},
+plank:{d:1800,f:[P(110,172,74,[0,90,0,90],[-80,-80,-80,-80]),P(110,170,74,[0,90,0,90],[-80,-80,-80,-80])]},
+dips:{d:2200,f:[P(100,128,-5,[-8,-5,-8,-5],[88,85,88,85]),P(100,150,-5,[-70,10,-70,10],[88,85,88,85])]},
+superman:{d:2200,f:[P(80,172,88,[90,90,90,90],[-88,-88,-88,-88]),P(80,170,76,[70,60,70,60],[-100,-100,-100,-100])]},
+situp:{d:2200,f:[P(112,172,-88,[-110,-170,-110,-170],[150,20,150,20]),P(112,172,28,[70,90,70,90],[150,20,150,20])]},
+legraise:{d:2200,f:[P(105,172,-90,[90,90,90,90],[90,90,90,90]),P(105,172,-90,[90,90,90,90],[175,175,175,175])]},
+bicycle:{d:1200,f:[P(110,170,-70,[-100,-160,-100,-160],[140,70,95,95]),P(110,170,-70,[-100,-160,-100,-160],[95,95,140,70])]},
+climber:{d:560,f:[P(109,153,65,[0,0,0,0],[50,-100,-65,-65]),P(109,153,65,[0,0,0,0],[-65,-65,50,-100])]},
+twist:{d:1400,f:[P(100,150,-25,[-20,-20,-20,-20],[100,95,100,95]),P(100,150,-25,[95,95,95,95],[100,95,100,95])]},
+burpee:{d:3200,f:[SS,SQ1,PL0,SQ1,JUMP]},
+toetouch:{d:2400,f:[SS,P(95,110,115,[5,5,5,5],[0,0,0,0])]},
+armcircle:{d:2400,f:[P(100,110,0,[-90,-90,90,90],[-6,-6,6,6]),P(100,110,0,[-170,-170,170,170],[-6,-6,6,6]),P(100,110,0,[-90,-90,90,90],[-6,-6,6,6]),P(100,110,0,[-12,-12,12,12],[-6,-6,6,6])]},
+hipcircle:{d:2400,f:[P(88,110,8,[-45,40,45,-40],[-6,-6,6,6]),P(100,110,0,[-45,40,45,-40],[-6,-6,6,6]),P(112,110,-8,[-45,40,45,-40],[-6,-6,6,6]),P(100,110,0,[-45,40,45,-40],[-6,-6,6,6])]}};
+function animFor(n){n=n.toLowerCase();var m=[['jumping jack','jj'],['chạy tại chỗ','run'],['nâng gối cao','knees'],['nhảy dây đổi chân','ropealt'],['nhảy dây nâng gối','knees'],['nhảy dây','rope'],['squat nhảy','squatjump'],['squat giữ','squathold'],['squat','squat'],['lunge','lunge'],['cầu mông','bridge'],['bắp chân','calf'],['hít đất','pushup'],['plank','plank'],['dips','dips'],['superman','superman'],['gập bụng','situp'],['nâng chân','legraise'],['bicycle','bicycle'],['mountain','climber'],['russian','twist'],['burpee','burpee'],['gập người','toetouch'],['xoay khớp','armcircle'],['xoay hông','hipcircle']];for(var i=0;i<m.length;i++)if(n.indexOf(m[i][0])>=0)return m[i][1];return 'jj'}
+function poseAt(key,now){var a=ANI[key]||ANI.jj,f=a.f,n=f.length,x=(now%a.d)/a.d*n,i=Math.floor(x),u=x-i;u=(1-Math.cos(u*Math.PI))/2;var p=f[i%n],q=f[(i+1)%n];return p.map(function(v,k){return v+(q[k]-v)*u})}
+function fig(c,p,col){var x=c.getContext('2d'),W=c.width,H=c.height,s=W/200;x.setTransform(s,0,0,s,0,0);x.clearRect(0,0,200,200*H/W);
+var hx=p[0],hy=p[1],t=p[2]*Math.PI/180,sn=Math.sin,cs=Math.cos;function d(a,l,o){a*=Math.PI/180;return [o[0]+l*sn(a),o[1]+l*cs(a)]}
+var hip=[hx,hy],neck=[hx+50*sn(t),hy-50*cs(t)],head=[hx+64*sn(t),hy-64*cs(t)];
+var e1=d(p[3],28,neck),h1=d(p[4],26,e1),e2=d(p[5],28,neck),h2=d(p[6],26,e2),k1=d(p[7],38,hip),f1=d(p[8],38,k1),k2=d(p[9],38,hip),f2=d(p[10],38,k2);
+x.lineCap='round';x.lineJoin='round';x.strokeStyle='#D6C7BA';x.lineWidth=2;x.beginPath();x.moveTo(10,189);x.lineTo(190,189);x.stroke();
+function ln(pts,c2,w){x.strokeStyle=c2;x.lineWidth=w;x.beginPath();pts.forEach(function(q,i){i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1])});x.stroke()}
+ln([neck,e2,h2],'#F5A26B',7);ln([hip,k2,f2],'#F5A26B',8);ln([hip,neck],'#1F2937',10);ln([hip,k1,f1],'#C2410C',8);ln([neck,e1,h1],'#C2410C',7);
+x.fillStyle='#1F2937';x.beginPath();x.arc(head[0],head[1],11,0,7);x.fill()}
+var AN=[],raf=null;
+function addAnim(c,key){AN.push({c:c,k:key,t0:Date.now()});if(!raf)loopA()}
+function loopA(){var now=Date.now();AN=AN.filter(function(a){return document.body.contains(a.c)});AN.forEach(function(a){fig(a.c,poseAt(a.k,now-a.t0))});raf=AN.length?requestAnimationFrame(loopA):null}
+
 /* ---------- Thể thao ---------- */
 var RT=[
 {n:'Khởi động 5 phút',d:'Làm nóng người trước khi tập',w:30,r:10,x:[['Xoay khớp vai, cổ tay','Xoay tròn hai vai và cổ tay, chậm và đều'],['Jumping jack','Nhảy dang tay chân, nhịp nhàng'],['Chạy tại chỗ','Nâng gối vừa phải, đánh tay'],['Gập người chạm chân','Hai chân rộng bằng vai, gập xuống thả lỏng'],['Xoay hông','Hai tay chống hông, xoay tròn']]},
@@ -113,12 +156,15 @@ var RT=[
 function sport(){var work=ls('tau_work',{}),wk7=0,st=0,tm=work[key(new Date())]||0;for(var i=0;i<7;i++)wk7+=work[key(dayOff(i))]||0;
 for(var i=work[key(new Date())]?0:1;i<60;i++){if(work[key(dayOff(i))])st++;else break}
 var h='<div class="card"><h3>Hôm nay đã tập</h3><div class="big">'+tm+' phút</div><div class="mut">7 ngày: '+wk7+' phút · chuỗi '+st+' ngày liên tiếp</div></div><div class="card"><h3>Chọn bài tập</h3><div class="mut">Tập trong nhà, không cần dụng cụ. Khởi động trước, dừng ngay nếu đau nhói hoặc chóng mặt. Người có bệnh tim, huyết áp hoặc chấn thương khớp nên hỏi bác sĩ trước.</div>';
-RT.forEach(function(r,i){var tot=Math.round(r.x.length*(r.w+r.r)/60);h+='<div class="rt"><b>'+r.n+'</b><div class="mut">'+r.d+' · '+r.x.length+' bài · khoảng '+tot+' phút</div><button class="b" onclick="startW('+i+')">Bắt đầu ngay</button></div>'});
+RT.forEach(function(r,i){var tot=Math.round(r.x.length*(r.w+r.r)/60);h+='<div class="rt"><b>'+r.n+'</b><div class="mut">'+r.d+' · '+r.x.length+' bài · khoảng '+tot+' phút</div><button class="b" onclick="startW('+i+')">Bắt đầu ngay</button><button class="b g" onclick="prevR('+i+')">Xem động tác</button></div>'});
 $('v').innerHTML=h+'</div>'}
+function prevR(i){var r=RT[i],h='<div class="bar" style="display:flex;justify-content:space-between;margin-bottom:8px"><button class="b g" onclick="go(1)">← Bài tập</button><button class="b" onclick="startW('+i+')">Bắt đầu</button></div><div class="card"><h3>'+r.n+'</h3><div class="mut">Mỗi động tác lặp lại liên tục để bạn tập theo. '+r.w+' giây tập, '+r.r+' giây nghỉ.</div></div>';
+r.x.forEach(function(e,k){h+='<div class="card" style="display:flex;gap:12px;align-items:center"><canvas class="ac" width="260" height="260" style="width:130px;height:130px;flex:none;background:#FAF5F0;border-radius:14px"></canvas><div><b>'+(k+1)+'. '+e[0]+'</b><div class="mut" style="margin-top:4px">'+e[1]+'</div></div></div>'});
+$('v').innerHTML=h;var cs=document.querySelectorAll('canvas.ac');r.x.forEach(function(e,k){addAnim(cs[k],animFor(e[0]))})}
 var W=null,au=null;
 function beep(f,ms){try{au=au||new (window.AudioContext||window.webkitAudioContext)();var o=au.createOscillator(),g=au.createGain();o.frequency.value=f;g.gain.value=.2;o.connect(g);g.connect(au.destination);o.start();o.stop(au.currentTime+ms/1000)}catch(e){}}
 function startW(i){var r=RT[i];W={r:r,i:0,ph:'ready',end:Date.now()+5000,paused:0,start:Date.now(),last:-1};
-$('v').innerHTML='<div class="card"><div class="mut" id="wp"></div><div class="ex" id="we"></div><div class="tm" id="wt"></div><div class="mut" id="wh" style="text-align:center"></div><div class="mut" id="wn" style="text-align:center;margin-top:6px"></div><div style="text-align:center"><button class="b" id="pz" onclick="pauseW()">Tạm dừng</button><button class="b g" onclick="skipW()">Bỏ qua</button><button class="b g" onclick="endW(false)">Dừng</button></div></div>';
+$('v').innerHTML='<div class="card"><div class="mut" id="wp"></div><canvas id="wa" width="440" height="440" style="width:210px;height:210px;display:block;margin:4px auto;background:#FAF5F0;border-radius:14px"></canvas><div class="ex" id="we"></div><div class="tm" id="wt"></div><div class="mut" id="wh" style="text-align:center"></div><div class="mut" id="wn" style="text-align:center;margin-top:6px"></div><div style="text-align:center"><button class="b" id="pz" onclick="pauseW()">Tạm dừng</button><button class="b g" onclick="skipW()">Bỏ qua</button><button class="b g" onclick="endW(false)">Dừng</button></div></div>';
 beep(440,150);timer=setInterval(tickW,200);tickW()}
 function pauseW(){if(!W)return;if(W.paused){W.end+=Date.now()-W.paused;W.paused=0;$('pz').textContent='Tạm dừng'}else{W.paused=Date.now();$('pz').textContent='Tiếp tục'}}
 function skipW(){if(W)W.end=Date.now()}
@@ -130,7 +176,8 @@ $('wp').textContent='Bài '+(W.i+1)+'/'+r.x.length+' · '+r.n;
 $('we').textContent=W.ph=='ready'?'Chuẩn bị':W.ph=='work'?cur[0]:'Nghỉ';
 $('wt').textContent=left;$('wt').style.color=W.ph=='work'?'#C2410C':'#15803D';
 $('wh').textContent=W.ph=='work'?cur[1]:W.ph=='ready'?'Bài đầu: '+r.x[0][0]:'Chuẩn bị tiếp';
-$('wn').textContent=W.ph!='work'&&nx?'Tiếp theo: '+nx[0]:''}
+$('wn').textContent=W.ph!='work'&&nx?'Tiếp theo: '+nx[0]:'';
+var shown=W.ph=='rest'&&nx?nx[0]:W.ph=='ready'?r.x[0][0]:cur[0],ak=animFor(shown);if(W.ak!=ak){W.ak=ak;AN=AN.filter(function(a){return a.c.id!='wa'});addAnim($('wa'),ak)}}
 function endW(done){clearInterval(timer);timer=null;var mins=Math.max(done?1:0,Math.round((Date.now()-W.start-(W.paused?Date.now()-W.paused:0))/60000));if(!done&&mins<1){W=null;go(1);return}
 var work=ls('tau_work',{}),k=key(new Date());work[k]=(work[k]||0)+mins;sv('tau_work',work);beep(988,500);W=null;
 $('v').innerHTML='<div class="card"><div class="ex">'+(done?'Hoàn thành! 🎉':'Đã dừng')+'</div><div class="mut" style="text-align:center;margin:8px 0">Đã ghi '+mins+' phút. Uống một ngụm nước và vươn vai nhé.</div><div style="text-align:center"><button class="b" onclick="go(1)">Xong</button></div></div>'}

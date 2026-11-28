@@ -153,6 +153,87 @@ object Store {
 
     fun goalMin(c: Context): Int = p(c).getInt("goal_min", 0)
 
+    /* ----- Nhóm app: ent, study, work hoặc custom:<tên>; rỗng là mặc định ----- */
+    fun cat(c: Context, pkg: String): String = p(c).getString("cat_$pkg", "") ?: ""
+
+    fun setCat(c: Context, pkg: String, v: String) {
+        val e = p(c).edit()
+        if (v.isEmpty()) e.remove("cat_$pkg") else e.putString("cat_$pkg", v)
+        e.apply()
+    }
+
+    fun catLabel(v: String): String = when {
+        v == "ent" -> "Giải trí"
+        v == "study" -> "Học tập"
+        v == "work" -> "Công việc"
+        v.startsWith("custom:") -> v.substring(7)
+        else -> "Chưa phân loại"
+    }
+
+    /* ----- Khung giờ bị chặn của từng app: "bắt đầu-kết thúc" tính bằng phút trong ngày ----- */
+    fun win(c: Context, pkg: String): IntArray? {
+        val s = p(c).getString("win_$pkg", null) ?: return null
+        val a = s.split("-")
+        if (a.size != 2) return null
+        return intArrayOf(a[0].toIntOrNull() ?: return null, a[1].toIntOrNull() ?: return null)
+    }
+
+    fun setWin(c: Context, pkg: String, s: Int, e: Int) {
+        val ed = p(c).edit()
+        if (s < 0) ed.remove("win_$pkg") else ed.putString("win_$pkg", "$s-$e")
+        ed.apply()
+    }
+
+    fun inWin(c: Context, pkg: String, now: Long): Boolean {
+        val w = win(c, pkg) ?: return false
+        val m = ((now - T.dayStart(now)) / 60000L).toInt()
+        return if (w[0] <= w[1]) m in w[0] until w[1] else (m >= w[0] || m < w[1])
+    }
+
+    fun warnMin(c: Context): Int = p(c).getInt("warn_min", 15)
+
+    /* ----- Số lần bị chặn mỗi ngày ----- */
+    fun blkAdd(c: Context, pkg: String) {
+        val k = "blk_" + T.key(System.currentTimeMillis())
+        val o = try { JSONObject(p(c).getString(k, "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
+        o.put(pkg, o.optInt(pkg, 0) + 1)
+        p(c).edit().putString(k, o.toString()).apply()
+    }
+
+    fun blkDay(c: Context, key: String): Map<String, Int> {
+        val out = HashMap<String, Int>()
+        try {
+            val o = JSONObject(p(c).getString("blk_$key", "{}") ?: "{}")
+            val it = o.keys()
+            while (it.hasNext()) {
+                val k = it.next()
+                out[k] = o.getInt(k)
+            }
+        } catch (e: Exception) {
+        }
+        return out
+    }
+
+    /* ----- Lịch sử tập trung ----- */
+    fun focusBegin(c: Context, start: Long, planned: Int) {
+        p(c).edit().putLong("fc_start", start).putInt("fc_plan", planned).apply()
+    }
+
+    /** Ghi một phiên tập trung đã kết thúc (tự hết giờ hoặc bị dừng) vào lịch sử, giữ 40 phiên. */
+    fun focusFinish(c: Context, endAt: Long) {
+        val s = p(c).getLong("fc_start", 0L)
+        if (s <= 0L) return
+        val plan = p(c).getInt("fc_plan", 0)
+        val done = Math.max(0L, Math.min(endAt - s, plan * 60000L)) / 60000L
+        val a = try { JSONArray(p(c).getString("fc_hist", "[]") ?: "[]") } catch (e: Exception) { JSONArray() }
+        a.put(JSONObject().put("s", s).put("p", plan).put("d", done))
+        val keep = JSONArray()
+        for (i in Math.max(0, a.length() - 40) until a.length()) keep.put(a.get(i))
+        p(c).edit().putString("fc_hist", keep.toString()).remove("fc_start").apply()
+    }
+
+    fun focusHist(c: Context): JSONArray = try { JSONArray(p(c).getString("fc_hist", "[]") ?: "[]") } catch (e: Exception) { JSONArray() }
+
     fun waitSec(c: Context): Int = p(c).getInt("wait_sec", 15)
 
     fun openSec(c: Context): Int = p(c).getInt("open_sec", 60)
@@ -604,6 +685,9 @@ object Ent {
     }
 
     fun isEnt(c: Context, pkg: String): Boolean {
+        val ct = Store.cat(c, pkg)
+        if (ct == "ent") return true
+        if (ct.isNotEmpty()) return false
         if (Store.entOn(c).contains(pkg)) return true
         if (Store.entOff(c).contains(pkg)) return false
         return auto(c.packageManager, pkg)
@@ -632,6 +716,7 @@ object Ent {
             val p = pkgs[i]
             sOn.remove(p)
             sOff.remove(p)
+            if (isEnt(c, p) != on[i]) Store.setCat(c, p, "")
             val a = auto(c.packageManager, p)
             if (on[i] && !a) sOn.add(p)
             if (!on[i] && a) sOff.add(p)
@@ -641,3 +726,51 @@ object Ent {
     }
 }
 
+
+/* ---------- Kiểm tra bản cập nhật trên GitHub ---------- */
+object Updater {
+    private const val API = "https://api.github.com/repos/Minhnguyen-1209/Tau/releases/latest"
+
+    @Suppress("DEPRECATION")
+    fun cur(c: Context): Long = try {
+        val pi = c.packageManager.getPackageInfo(c.packageName, 0)
+        if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else pi.versionCode.toLong()
+    } catch (e: Exception) {
+        0L
+    }
+
+    fun newVer(c: Context): Long = Store.p(c).getLong("upd_ver", 0L)
+
+    fun url(c: Context): String = Store.p(c).getString("upd_url", "") ?: ""
+
+    fun available(c: Context): Boolean = newVer(c) > cur(c) && url(c).isNotEmpty()
+
+    /** Gọi trên luồng nền. Tối đa mỗi 6 giờ một lần trừ khi [force]. Trả về true nếu có bản mới. */
+    fun check(c: Context, force: Boolean): Boolean {
+        val now = System.currentTimeMillis()
+        if (!force && now - Store.p(c).getLong("upd_at", 0L) < 6 * 3600000L) return available(c)
+        try {
+            val cn = java.net.URL(API).openConnection() as java.net.HttpURLConnection
+            cn.connectTimeout = 8000
+            cn.readTimeout = 8000
+            cn.setRequestProperty("Accept", "application/vnd.github+json")
+            val body = cn.inputStream.bufferedReader().use { it.readText() }
+            val o = JSONObject(body)
+            val ver = o.getString("tag_name").filter { it.isDigit() }.toLongOrNull() ?: 0L
+            val assets = o.getJSONArray("assets")
+            var u = ""
+            for (i in 0 until assets.length()) {
+                val a = assets.getJSONObject(i)
+                if (a.getString("name").endsWith(".apk")) u = a.getString("browser_download_url")
+            }
+            Store.p(c).edit().putLong("upd_ver", ver).putString("upd_url", u).putLong("upd_at", now).putString("upd_err", "").apply()
+            if (ver > cur(c) && u.isNotEmpty() && Store.p(c).getLong("upd_notified", 0L) != ver) {
+                Store.p(c).edit().putLong("upd_notified", ver).apply()
+                Notif.show(c, 96, "Có bản Tau mới (v$ver)", "Mở Tau để tải và cài. Dữ liệu của bạn được giữ nguyên.")
+            }
+        } catch (e: Exception) {
+            Store.p(c).edit().putString("upd_err", e.javaClass.simpleName).putLong("upd_at", now).apply()
+        }
+        return available(c)
+    }
+}

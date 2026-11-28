@@ -263,6 +263,7 @@ class MonitorService : Service() {
         if (p == current) return
         gates[current]?.leave()
         current = p
+        entPkg = ""
         if (p.isNotEmpty()) Store.setLast(this, p)
         hideBlock()
         unmute()
@@ -288,6 +289,7 @@ class MonitorService : Service() {
     private fun reasonFor(pkg: String, now: Long): Int {
         if (now < Store.focusEnd(this) && Store.focusApps(this).contains(pkg)) return 2
         if (Store.bedActive(this, now) && Ent.set(this).contains(pkg)) return 3
+        if (Store.inWin(this, pkg, now)) return 4
         if (!Usage.hasAccess(this)) return 0
         if (pkg != stPkg || now - stAt >= 5000L) refreshStats(pkg, now)
         val el = now - stAt
@@ -334,6 +336,7 @@ class MonitorService : Service() {
         housekeeping(now)
         val fe = Store.focusEnd(this)
         if (fe > 0L && now >= fe) {
+            Store.focusFinish(this, fe)
             Store.setFocusEnd(this, 0L)
             Notif.show(this, 90, "Hết giờ tập trung", "Làm tốt lắm! Các app đã được mở lại.")
         }
@@ -365,6 +368,10 @@ class MonitorService : Service() {
         g.countdownMs = Store.waitSec(this) * 1000L
         g.unlockMs = Store.openSec(this) * 1000L
         val st = g.step(now, reason != 0, on)
+        val prevPh = lastPh[pkg]
+        if (st.phase == Gate.Phase.COUNTDOWN && prevPh != Gate.Phase.COUNTDOWN) Store.blkAdd(this, pkg)
+        lastPh[pkg] = st.phase
+        warnLong(pkg, now)
         when (st.phase) {
             Gate.Phase.FREE -> {
                 hideBlock()
@@ -378,7 +385,7 @@ class MonitorService : Service() {
                 } else if (!canDraw()) {
                     pillState("ẩn: chưa cấp quyền hiển thị trên app khác")
                 } else {
-                    showPill(pillText(pkg, now))
+                    showPill(if (now < flashUntil) flashText else pillText(pkg, now))
                     pillState("đang hiện cho $pkg")
                 }
             }
@@ -407,7 +414,13 @@ class MonitorService : Service() {
     }
 
     private var goalAt = 0L
+    private var entPkg = ""
+    private var nextWarn = 0L
+    private var flashText = ""
+    private var flashUntil = 0L
+    private var lastPh = HashMap<String, Gate.Phase>()
     private var syncAt = 0L
+    private var updAt = 0L
     private var batRx: BroadcastReceiver? = null
     private var chgNotified = false
     private var hotAt = 0L
@@ -433,6 +446,15 @@ class MonitorService : Service() {
 
     /** Mỗi 30 phút lưu số liệu từng ngày và từng khung giờ, Chủ nhật 20h báo cáo tuần. */
     private fun housekeeping(now: Long) {
+        if (now - updAt >= 3600000L) {
+            updAt = now
+            Thread {
+                try {
+                    Updater.check(applicationContext, false)
+                } catch (t: Throwable) {
+                }
+            }.start()
+        }
         if (now - syncAt >= 1800000L && Usage.hasAccess(this)) {
             syncAt = now
             Thread {
@@ -469,6 +491,32 @@ class MonitorService : Service() {
         if (tot >= goal * 60000L) {
             Store.p(this).edit().putString("goal_notified", key).apply()
             Notif.show(this, 91, "Đã đủ mục tiêu hôm nay", "Bạn đã dùng điện thoại ${T.fmt(tot)}, vượt mục tiêu $goal phút.")
+        }
+    }
+
+    /** Cảnh báo khi dùng liên tục một app giải trí quá số phút đã đặt, lặp lại sau mỗi chừng đó phút. */
+    private fun warnLong(pkg: String, now: Long) {
+        val wm = Store.warnMin(this)
+        if (wm <= 0 || !Ent.set(this).contains(pkg)) {
+            entPkg = ""
+            return
+        }
+        if (entPkg != pkg) {
+            entPkg = pkg
+            nextWarn = now + wm * 60000L
+            return
+        }
+        if (now >= nextWarn) {
+            val total = (now - (nextWarn - wm * 60000L)) / 60000L
+            nextWarn += wm * 60000L
+            val label = try {
+                packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+            } catch (e: Exception) {
+                pkg
+            }
+            Notif.show(this, 95, "Dùng $label khá lâu rồi", "Bạn đã dùng liên tục khoảng $total phút. Hãy nghỉ tay, uống nước hoặc đứng dậy một chút.")
+            flashText = "⚠ $total phút liên tục"
+            flashUntil = now + 10000L
         }
     }
 
@@ -584,6 +632,7 @@ class MonitorService : Service() {
                 when (reason) {
                     2 -> "Bạn đang trong chế độ tập trung"
                     3 -> "Đã đến giờ đi ngủ, hãy cất điện thoại"
+                    4 -> "Ứng dụng này đang trong khung giờ bị chặn"
                     else -> "Bạn đã sử dụng hết thời gian giới hạn"
                 },
                 24f, true, 1f

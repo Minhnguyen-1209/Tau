@@ -8,6 +8,10 @@ import android.app.TimePickerDialog
 import android.content.ComponentName
 import android.content.Context
 import android.app.ActivityManager
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.widget.ArrayAdapter
+import android.widget.Spinner
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Environment
@@ -507,6 +511,11 @@ class MainActivity : Activity() {
         h.post(tick)
         if (MonitorService.inst == null) MonitorService.start(this)
         if (needNotifPerm()) askNotif()
+        Thread {
+            val had = Updater.available(applicationContext)
+            Updater.check(applicationContext, false)
+            if (!had && Updater.available(applicationContext)) runOnUiThread { if (tab == 0 || tab == 1) refresh() }
+        }.start()
     }
 
     private fun monitorOn(): Boolean =
@@ -625,9 +634,11 @@ class MainActivity : Activity() {
     }
 
     private fun edit(a: AppInfo) {
+        val sv = ScrollView(this)
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(20), dp(8), dp(20), 0)
+        box.setPadding(dp(20), dp(8), dp(20), dp(8))
+        sv.addView(box)
         val et = EditText(this)
         et.inputType = InputType.TYPE_CLASS_NUMBER
         et.hint = "Giới hạn mỗi ngày (phút), để trống = không giới hạn"
@@ -638,12 +649,59 @@ class MainActivity : Activity() {
         cb.isChecked = Store.focusApps(this).contains(a.pkg)
         box.addView(et)
         box.addView(cb)
+
+        box.addView(tv("Nhóm app", 13f, true))
+        val cats = arrayOf("Mặc định (tự nhận diện)", "Giải trí", "Học tập", "Công việc", "Nhóm riêng")
+        val keys = arrayOf("", "ent", "study", "work", "custom")
+        val cc = Store.cat(this, a.pkg)
+        val sp = Spinner(this)
+        sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, cats)
+        sp.setSelection(if (cc == "") 0 else if (cc == "ent") 1 else if (cc == "study") 2 else if (cc == "work") 3 else 4)
+        box.addView(sp)
+        val cn = EditText(this)
+        cn.hint = "Tên nhóm riêng (nếu chọn Nhóm riêng)"
+        if (cc.startsWith("custom:")) cn.setText(cc.substring(7))
+        box.addView(cn)
+
+        val w0 = Store.win(this, a.pkg)
+        var ws = w0?.get(0) ?: -1
+        var we = w0?.get(1) ?: -1
+        fun wtxt(): String = if (ws < 0) "Khung giờ bị chặn: chưa đặt" else "Khung giờ bị chặn: ${T.mm(ws)}–${T.mm(we)}"
+        val wb = Button(this)
+        wb.isAllCaps = false
+        wb.text = wtxt()
+        wb.setOnClickListener {
+            TimePickerDialog(this, { _, hh, mm ->
+                ws = hh * 60 + mm
+                TimePickerDialog(this, { _, h2, m2 ->
+                    we = h2 * 60 + m2
+                    wb.text = wtxt()
+                }, (hh + 1) % 24, mm, true).show()
+            }, if (ws >= 0) ws / 60 else 22, if (ws >= 0) ws % 60 else 0, true).show()
+        }
+        box.addView(wb)
+        val wc = Button(this)
+        wc.isAllCaps = false
+        wc.text = "Bỏ khung giờ"
+        wc.setOnClickListener {
+            ws = -1
+            we = -1
+            wb.text = wtxt()
+        }
+        box.addView(wc)
+        box.addView(tv("Trong khung giờ này app bị chặn theo chu kỳ đếm ngược như bình thường.", 11f, false, mut))
+
         AlertDialog.Builder(this)
             .setTitle(a.label)
-            .setView(box)
+            .setView(sv)
             .setPositiveButton("Lưu") { _, _ ->
                 Store.setLimit(this, a.pkg, et.text.toString().toIntOrNull() ?: 0)
                 Store.setFocusApp(this, a.pkg, cb.isChecked)
+                val k = keys[sp.selectedItemPosition]
+                val nm = cn.text.toString().trim()
+                Store.setCat(this, a.pkg, if (k == "custom") (if (nm.isEmpty()) "" else "custom:$nm") else k)
+                Ent.invalidate()
+                Store.setWin(this, a.pkg, ws, we)
                 refresh()
             }
             .setNegativeButton("Huỷ", null)
@@ -655,6 +713,7 @@ class MainActivity : Activity() {
         val ll = lTime
         ll.removeAllViews()
         ll.addView(head("Thời gian sử dụng"))
+        updateBanner(ll)
         if (!Usage.hasAccess(this)) {
             val c = card()
             c.addView(tv("Cần cấp quyền xem thời gian dùng app để thống kê."))
@@ -741,6 +800,10 @@ class MainActivity : Activity() {
             c1.addView(tv("Số lần bật màn hình: ${Usage.screenOns(this, t0, now)}", 13f, false, mut))
         } catch (e: Exception) {
         }
+        if (today) {
+            val bk = Store.blkDay(this, T.key(t0)).values.sum()
+            if (bk > 0) c1.addView(tv("Số lần bị chặn hôm nay: $bk", 13f, false, mut))
+        }
         val goal = Store.goalMin(this)
         if (goal > 0 && today) {
             var streak = 0
@@ -760,6 +823,7 @@ class MainActivity : Activity() {
         }
         ll.addView(c1)
 
+        catCard(ll, tot)
         entCard(ll, tot, ent, 1, if (today) Store.loadDay(this, T.key(T.addDays(t0, -1))) else null, if (today) 1 else 0)
 
         val cur = if (today) ((now - t0) / 1800000L).toInt() else -1
@@ -795,6 +859,98 @@ class MainActivity : Activity() {
             ac.addView(appRow(a, T.fmt(e.value), false))
         }
         ll.addView(ac)
+    }
+
+    /** Tổng thời gian theo nhóm app (giải trí, học tập, công việc, nhóm riêng). */
+    private fun catCard(ll: LinearLayout, tot: Map<String, Long>) {
+        val m = HashMap<String, Long>()
+        for ((k, v) in tot) {
+            val ct = Store.cat(this, k)
+            val key = if (ct.isEmpty() && Ent.isEnt(this, k)) "ent" else ct
+            m[key] = (m[key] ?: 0L) + v
+        }
+        val sum = m.values.sum()
+        if (sum <= 0L) return
+        val c = card()
+        c.addView(tv("Theo nhóm app", 16f, true))
+        for (e in m.entries.sortedByDescending { it.value }) {
+            val r = LinearLayout(this)
+            r.orientation = LinearLayout.HORIZONTAL
+            r.setPadding(0, dp(8), 0, 0)
+            r.addView(tv(Store.catLabel(e.key), 14f), LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(tv(T.fmt(e.value) + " · " + (e.value * 100 / sum) + "%", 14f, true))
+            c.addView(r)
+            val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+            bar.max = 100
+            bar.progress = (e.value * 100 / sum).toInt()
+            bar.progressTintList = ColorStateList.valueOf(orange)
+            c.addView(bar, LinearLayout.LayoutParams(-1, dp(8)))
+        }
+        c.addView(tv("Chạm tên app ở danh sách bên dưới để đổi nhóm.", 11f, false, mut))
+        ll.addView(c)
+    }
+
+    private fun updateBanner(ll: LinearLayout) {
+        if (!Updater.available(this)) return
+        val c = card()
+        c.addView(tv("Có bản mới: v${Updater.newVer(this)} (bạn đang dùng v${Updater.cur(this)})", 15f, true))
+        c.addView(tv("Cài đè lên bản hiện tại, dữ liệu và cài đặt được giữ nguyên.", 12f, false, mut))
+        val row = LinearLayout(this)
+        row.addView(btn("Tải và cài") { installUpdate() })
+        row.addView(btn("Mở trang tải") { openFirst(listOf(Intent(Intent.ACTION_VIEW, Uri.parse(Updater.url(this))))) })
+        c.addView(row)
+        ll.addView(c)
+    }
+
+    private var dlId = -1L
+
+    private fun installUpdate() {
+        val u = Updater.url(this)
+        if (u.isEmpty()) return
+        try {
+            val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            val r = DownloadManager.Request(Uri.parse(u))
+                .setTitle("Cập nhật Tau")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, "tau-update.apk")
+            dlId = dm.enqueue(r)
+            Toast.makeText(this, "Đang tải bản mới, xong sẽ tự mở màn hình cài đặt", Toast.LENGTH_LONG).show()
+            val rx = object : BroadcastReceiver() {
+                override fun onReceive(c: Context, i: Intent) {
+                    if (i.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L) != dlId) return
+                    try {
+                        unregisterReceiver(this)
+                    } catch (e: Exception) {
+                    }
+                    doInstall(dm, dlId)
+                }
+            }
+            registerReceiver(rx, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+        } catch (e: Exception) {
+            openFirst(listOf(Intent(Intent.ACTION_VIEW, Uri.parse(u))))
+        }
+    }
+
+    private fun doInstall(dm: DownloadManager, id: Long) {
+        val uri = dm.getUriForDownloadedFile(id)
+        if (uri == null) {
+            Toast.makeText(this, "Tải chưa xong hoặc lỗi, mở trang tải để tải bằng trình duyệt", Toast.LENGTH_LONG).show()
+            openFirst(listOf(Intent(Intent.ACTION_VIEW, Uri.parse(Updater.url(this)))))
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(this, "Hãy bật Cho phép từ nguồn này cho Tau, rồi bấm Tải và cài lại", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return
+        }
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (e: Exception) {
+            openFirst(listOf(Intent(Intent.ACTION_VIEW, Uri.parse(Updater.url(this)))))
+        }
     }
 
     private fun pickDay() {
@@ -1005,6 +1161,7 @@ class MainActivity : Activity() {
         }
         ll.addView(c1)
 
+        catCard(ll, cur)
         entCard(ll, cur, ent, days, prev, havePrev)
         adviceCard(ll, curSum, cur, ent, null, haveCur, if (havePrev > 0) prevSum / havePrev else 0L)
 
@@ -1055,6 +1212,7 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Hãy tick ít nhất một app cần chặn ở danh sách bên dưới", Toast.LENGTH_LONG).show()
             return
         }
+        Store.focusBegin(this, System.currentTimeMillis(), minutes)
         Store.setFocusEnd(this, System.currentTimeMillis() + minutes * 60000L)
         updateFocusLabel()
     }
@@ -1063,6 +1221,7 @@ class MainActivity : Activity() {
         val ll = lFocus
         ll.removeAllViews()
         ll.addView(head("Tập trung & giới hạn"))
+        updateBanner(ll)
 
         val st = card()
         val running = monitorOn()
@@ -1104,6 +1263,7 @@ class MainActivity : Activity() {
             if (Store.p(this).getBoolean("strict", false) && Store.focusEnd(this) > System.currentTimeMillis()) {
                 Toast.makeText(this, "Đang ở chế độ nghiêm ngặt: phải chờ hết giờ mới dừng được", Toast.LENGTH_LONG).show()
             } else {
+                Store.focusFinish(this, System.currentTimeMillis())
                 Store.setFocusEnd(this, 0L)
                 updateFocusLabel()
             }
@@ -1128,6 +1288,48 @@ class MainActivity : Activity() {
         ll.addView(tc)
         updateFocusLabel()
 
+        val wf = foldCard(ll, "Cảnh báo dùng liên tục")
+        wf.addView(tv("Khi bạn dùng liên tục một app giải trí quá số phút này, Tau gửi thông báo và nhắc lại sau mỗi chừng đó phút.", 12f, false, mut))
+        val wmv = Store.warnMin(this)
+        wf.addView(btn(if (wmv > 0) "Cảnh báo sau: $wmv phút" else "Đang tắt, bấm để đặt") {
+            askNum("Cảnh báo sau bao nhiêu phút (0 = tắt)", "Số phút", wmv, 0, 240) { Store.p(this).edit().putInt("warn_min", it).apply(); buildFocus() }
+        })
+
+        val hf = foldCard(ll, "Lịch sử và thống kê")
+        run {
+            val t0 = T.dayStart(System.currentTimeMillis())
+            var total = 0
+            val perApp = HashMap<String, Int>()
+            for (i in 0..6) {
+                val ds = T.addDays(t0, -i)
+                val m = Store.blkDay(this, T.key(ds))
+                val n = m.values.sum()
+                total += n
+                for ((k, v) in m) perApp[k] = (perApp[k] ?: 0) + v
+                hf.addView(tv((if (i == 0) "Hôm nay" else "${T.dow(ds)} ${T.dom(ds)}/${T.month(ds)}") + ": " + (if (n > 0) "$n lần bị chặn" else "không bị chặn"), 12f, false, ink))
+            }
+            hf.addView(tv("Tổng 7 ngày: $total lần bị chặn (số lần màn hình chặn xuất hiện).", 12f, true, ink))
+            for (e in perApp.entries.sortedByDescending { it.value }.take(3)) {
+                hf.addView(tv("• ${appMap[e.key]?.label ?: e.key}: ${e.value} lần", 12f, false, mut))
+            }
+            val hist = Store.focusHist(this)
+            var sess7 = 0
+            var min7 = 0L
+            val lines = ArrayList<String>()
+            for (i in hist.length() - 1 downTo 0) {
+                val o = hist.getJSONObject(i)
+                val st = o.getLong("s")
+                if (st >= T.addDays(t0, -6)) {
+                    sess7++
+                    min7 += o.getLong("d")
+                }
+                if (lines.size < 10) lines.add("${T.dom(st)}/${T.month(st)} ${T.hm(st)} · ${o.getLong("d")}/${o.getInt("p")} phút")
+            }
+            hf.addView(tv("Tập trung 7 ngày: $sess7 phiên, $min7 phút", 12f, true, ink))
+            if (lines.isEmpty()) hf.addView(tv("Chưa có phiên tập trung nào.", 12f, false, mut))
+            for (l in lines) hf.addView(tv(l, 12f, false, mut))
+        }
+
         val dg = foldCard(ll, "Chẩn đoán")
         val slog = Store.p(this).getString("svc_log", null)
         if (slog != null) dg.addView(tv("Nhật ký:\n$slog", 11f, false, mut))
@@ -1137,6 +1339,19 @@ class MainActivity : Activity() {
         val err = Store.p(this).getString("last_err", null)
         if (err != null) dg.addView(tv("Lỗi gần nhất: $err", 12f, false, Color.RED))
         dg.addView(tv("Ô thời gian: " + (Store.p(this).getString("pill_state", null) ?: "chưa có thông tin"), 12f, false, mut))
+        dg.addView(tv("Phiên bản: v${Updater.cur(this)}" + (if (Updater.newVer(this) > 0) " · mới nhất trên GitHub: v${Updater.newVer(this)}" else ""), 12f, false, mut))
+        val ue = Store.p(this).getString("upd_err", "") ?: ""
+        if (ue.isNotEmpty()) dg.addView(tv("Kiểm tra cập nhật lỗi: $ue (có thể do mất mạng)", 12f, false, Color.RED))
+        dg.addView(btn("Kiểm tra cập nhật") {
+            Toast.makeText(this, "Đang kiểm tra...", Toast.LENGTH_SHORT).show()
+            Thread {
+                val has = Updater.check(applicationContext, true)
+                runOnUiThread {
+                    Toast.makeText(this, if (has) "Có bản mới v${Updater.newVer(this)}" else if ((Store.p(this).getString("upd_err", "") ?: "").isEmpty()) "Bạn đang dùng bản mới nhất" else "Không kiểm tra được, kiểm tra mạng", Toast.LENGTH_LONG).show()
+                    refresh()
+                }
+            }.start()
+        })
         dg.addView(btn("Hiện thử ô thời gian") {
             val svc = MonitorService.inst
             if (svc == null) {
