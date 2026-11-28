@@ -43,6 +43,15 @@ canvas{display:block;width:100%;background:#FAF5F0;border-radius:12px}
 .menu button:active,.b:active,.lvs button:active,.gz button:active,.dp .b:active,.sdp .b:active{transform:scale(.98);filter:brightness(.97)}
 .card{box-shadow:0 5px 18px rgba(80,55,35,.055)}
 canvas{image-rendering:auto}
+
+/* Sudoku: đường lưới rõ, ô chọn nổi bật và chữ co giãn theo màn hình */
+.sdg{box-shadow:0 5px 16px rgba(31,41,55,.09)}
+.sc{font-size:clamp(13px,4.5vw,20px);font-weight:500;transition:background .12s ease,box-shadow .12s ease}
+.sc.gv{font-weight:800;color:#9A3412}
+.sc.sel{box-shadow:inset 0 0 0 2px #C2410C;z-index:1}
+.sc.wr{animation:tauWrong .22s ease-in-out}
+@keyframes tauWrong{0%,100%{transform:translateX(0)}35%{transform:translateX(-2px)}70%{transform:translateX(2px)}}
+@media(max-width:360px){#app{padding:4px 8px 18px}.card{padding:10px}.sdg{border-width:1px}.sc.rb{border-right-width:2px}.sc.bb{border-bottom-width:2px}}
 </style></head><body><div id="app"></div>
 <script>
 var A=document.getElementById('app'),stop=null;
