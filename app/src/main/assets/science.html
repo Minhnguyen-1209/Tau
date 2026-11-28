@@ -92,7 +92,13 @@ var FORM=[
 ['ly','Điện - Từ','Từ trường và cảm ứng','Lực Lorentz: F = |q|vB·sinα\nLực từ: F = BIl·sinα\nSuất điện động cảm ứng: e = −ΔΦ/Δt\nTừ thông: Φ = BS·cosα\nMáy biến áp: U₁/U₂ = N₁/N₂'],
 ['ly','Điện - Từ','Dòng điện xoay chiều','u = U₀·cos(ωt + φ)\nU = U₀/√2, I = I₀/√2\nCảm kháng: Z_L = ωL, dung kháng: Z_C = 1/(ωC)\nTổng trở: Z = √(R² + (Z_L − Z_C)²)\nCông suất: P = UI·cosφ'],
 ['ly','Quang học','Quang hình','Khúc xạ: n₁·sin i = n₂·sin r\nPhản xạ toàn phần: sin i_gh = n₂/n₁\nThấu kính: 1/f = 1/d + 1/d′\nSố phóng đại: k = −d′/d\nĐộ tụ: D = 1/f (đi-ốp)'],
-['ly','Vật lý hiện đại','Lượng tử và hạt nhân','Năng lượng photon: ε = hf = hc/λ (h = 6,626·10⁻³⁴ J·s)\nHệ thức Einstein: E = mc²\nQuang điện: hf = A + ½mv₀max²\nPhóng xạ: N = N₀·2⁻ᵗ/ᵀ\nĐộ hụt khối: Δm = Zmₚ + (A − Z)mₙ − mₙhân']];
+['ly','Vật lý hiện đại','Lượng tử và hạt nhân','Năng lượng photon: ε = hf = hc/λ (h = 6,626·10⁻³⁴ J·s)\nHệ thức Einstein: E = mc²\nQuang điện: hf = A + ½mv₀max²\nPhóng xạ: N = N₀·2⁻ᵗ/ᵀ\nĐộ hụt khối: Δm = Zmₚ + (A − Z)mₙ − mₙhân'],
+['ly','Cơ học nâng cao','Nguyên lý tác dụng tối thiểu','Tác dụng: S = ∫ₜ₁ᵗ² L(q, q̇, t) dt\nNguyên lý Hamilton: δS = 0 khi hai đầu mút được giữ cố định\nLagrange: d/dt(∂L/∂q̇ᵢ) − ∂L/∂qᵢ = Qᵢ\nLực suy rộng: Qᵢ = Σₖ F⃗ₖ · ∂r⃗ₖ/∂qᵢ\nVới lực thế: L = T − U; nếu qᵢ là tọa độ chu kỳ thì pᵢ = ∂L/∂q̇ᵢ được bảo toàn'],
+['ly','Cơ học nâng cao','Lagrange với ràng buộc','Ràng buộc holonomic: fₐ(q,t) = 0\nPhương trình có nhân tử Lagrange: d/dt(∂L/∂q̇ᵢ) − ∂L/∂qᵢ = Σₐ λₐ·∂fₐ/∂qᵢ\nHệ hai vật: qᵢ là tọa độ suy rộng; λₐ liên hệ với lực ràng buộc\nChọn tọa độ độc lập giúp giảm số phương trình cần giải'],
+['ly','Cơ học nâng cao','Dao động nhỏ và mode riêng','Hệ tuyến tính: M q̈ + Kq = 0\nMode riêng: det(K − ω²M) = 0\nMột dao động điều hòa: ẍ + ω₀²x = 0, nghiệm x = A cos(ω₀t + φ)\nGần vị trí cân bằng ổn định q₀: ω₀² = U″(q₀)/m (hệ một bậc tự do)'],
+['ly','Điện - Từ','Phương trình Maxwell','Gauss điện: ∇·E⃗ = ρ/ε₀\nGauss từ: ∇·B⃗ = 0\nFaraday: ∇×E⃗ = −∂B⃗/∂t\nAmpère–Maxwell: ∇×B⃗ = μ₀J⃗ + μ₀ε₀∂E⃗/∂t\nTrong chân không: c = 1/√(μ₀ε₀)'],
+['ly','Cơ học nâng cao','Cơ học chất lưu','Phương trình liên tục (chất lỏng không nén): A₁v₁ = A₂v₂\nBernoulli trên cùng một dòng chảy lý tưởng: p + ½ρv² + ρgh = hằng số\nLực đẩy Archimedes: F_A = ρ_lỏng g V_chìm\nÁp suất thủy tĩnh: p = p₀ + ρgh'],
+['ly','Vật lý hiện đại','Thuyết tương đối hẹp','Hệ số Lorentz: γ = 1/√(1 − v²/c²)\nĐộng lượng: p = γmv\nNăng lượng toàn phần: E = γmc²\nNăng lượng nghỉ: E₀ = mc²\nHệ thức năng lượng–động lượng: E² = (pc)² + (mc²)²']];
 var CAT=0,tmpCat=0;
 
 function tabs(){return '<div class="seg">'+['Ghi chú','Công thức'].map(function(n,i){return '<button class="'+(i==tab?'on':'')+'" onclick="goTab('+i+')">'+n+'</button>'}).join('')+'</div>'}
