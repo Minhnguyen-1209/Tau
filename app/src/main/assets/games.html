@@ -288,7 +288,7 @@ G.pen=function(){
 var LV={D:{name:'Dễ',smart:.22},V:{name:'Bình thường',smart:.48},K:{name:'Khó',smart:.72}};
 var lv='V',you=0,cpu=0,round=0,phase='shoot',done=false,busy=false,aim=0,aimTimer=null,chargeTimer=null,charging=false,chargeStart=0,power=0;
 var Z=['Góc trái cao','Giữa cao','Góc phải cao','Góc trái thấp','Giữa thấp','Góc phải thấp'];
-var clean=function(){if(aimTimer)clearInterval(aimTimer);if(chargeTimer)clearInterval(chargeTimer);aimTimer=null;chargeTimer=null;charging=false};
+var clean=function(){if(aimTimer)clearInterval(aimTimer);if(chargeTimer)clearInterval(chargeTimer);document.removeEventListener('pointerup',releaseShot);document.removeEventListener('pointercancel',releaseShot);aimTimer=null;chargeTimer=null;charging=false};
 frame('','<div class="lvs" id="plv"><button data-lv="D">Dễ</button><button data-lv="V" class="on">Bình thường</button><button data-lv="K">Khó</button></div>'+
 '<div id="pscore" style="display:flex;align-items:center;justify-content:space-between;background:#142b3b;color:#fff;border-radius:14px;padding:12px 14px;margin:8px 0"><div style="text-align:center"><div style="font-size:11px;opacity:.8">BẠN</div><b id="py" style="font-size:28px">0</b></div><div style="text-align:center"><b style="font-size:15px">⚽ PENALTY</b><div id="pround" style="font-size:12px;opacity:.8;margin-top:3px">Lượt 1 / 5</div></div><div style="text-align:center"><div style="font-size:11px;opacity:.8">MÁY</div><b id="pc" style="font-size:28px">0</b></div></div>'+
 '<div class="msg" id="m">Giữ rồi thả để sút đúng thời điểm!</div>'+
@@ -318,7 +318,7 @@ function render(){
 }
 function paintAim(){if(!gz)return;Array.prototype.forEach.call(gz.children,function(b,i){b.style.background=i===aim&&phase==='shoot'&&!busy?'#fef08a':'#ffffffc9';b.style.transform=i===aim&&phase==='shoot'&&!busy?'scale(.97)':'scale(1)';b.style.boxShadow=i===aim&&phase==='shoot'&&!busy?'0 0 0 2px #facc15,inset 0 0 0 1px #fff':'inset 0 0 0 1px #d4e4eb55'})}
 function init(){
- clean();you=0;cpu=0;round=0;phase='shoot';done=false;busy=false;aim=0;power=0;
+ clean();document.addEventListener('pointercancel',releaseShot);you=0;cpu=0;round=0;phase='shoot';done=false;busy=false;aim=0;power=0;
  var k=document.getElementById('keeper'),b=document.getElementById('ball');if(k){k.textContent='🧤';k.style.left='50%';k.style.top='53%'}if(b){b.style.left='50%';b.style.top='auto';b.style.bottom='2px';b.style.transform='translateX(-50%)'}
  msg('Bạn sút trước! Giữ rồi thả để đá.');render();
  aimTimer=setInterval(function(){if(!done&&!busy&&phase==='shoot'){aim=(aim+1)%6;paintAim()}},430);
@@ -373,7 +373,6 @@ function finish(){done=true;busy=false;clean();if(you>cpu){msg('BẠN THẮNG '+
 document.querySelectorAll('#plv button').forEach(function(b){b.onclick=function(){lv=b.dataset.lv;document.querySelectorAll('#plv button').forEach(function(o){o.className=o===b?'on':''});init()}});
 document.getElementById('rs').onclick=init;
 stop=function(){clean()};
-document.addEventListener('pointercancel',releaseShot);
 init();
 };
 
