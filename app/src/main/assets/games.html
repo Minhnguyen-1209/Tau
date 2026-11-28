@@ -234,21 +234,23 @@ document.getElementById('sk').onclick=function(){bs.forEach(function(b){b.vx+=Ma
 document.getElementById('cl').onclick=function(){bs=[]};
 loop(function(){x.fillStyle='rgba(17,24,39,.35)';x.fillRect(0,0,400,520);bs.forEach(function(b){b.vy+=.35;b.x+=b.vx;b.y+=b.vy;b.h+=1;if(b.x<b.r){b.x=b.r;b.vx*=-.9}if(b.x>400-b.r){b.x=400-b.r;b.vx*=-.9}if(b.y>520-b.r){b.y=520-b.r;if(Math.abs(b.vy)>3)beep(150+b.r*10,.04);b.vy*=-.82;b.vx*=.99}
 x.shadowColor='hsl('+b.h+',90%,60%)';x.shadowBlur=22;x.fillStyle='hsl('+b.h+',90%,65%)';x.beginPath();x.arc(b.x,b.y,b.r,0,7);x.fill()});x.shadowBlur=0})};
-G.g2048=function(){frame('','<div class="g4" id="bd"></div><div class="msg" id="m">Vuốt để gộp các ô bằng nhau</div><button class="b" id="rs" style="width:100%">Chơi lại</button>');
+G.g2048=function(){var lv='V';frame('','<div class="lvs" id="lv2048"><button data-l="D">Dễ</button><button data-l="V" class="on">Bình thường</button><button data-l="K">Khó</button></div><div class="g4" id="bd"></div><div class="msg" id="m">Vuốt để gộp các ô bằng nhau</div><button class="b" id="rs" style="width:100%">Chơi lại</button>');
 var g,sc,over,col={0:'#FFF4EA',2:'#FED7AA',4:'#FDBA74',8:'#FB923C',16:'#F97316',32:'#EA580C',64:'#C2410C',128:'#9A3412',256:'#7C2D12',512:'#1F2937',1024:'#111827',2048:'#000'};
-function add(){var e=[];g.forEach(function(v,i){if(!v)e.push(i)});if(e.length)g[e[Math.floor(Math.random()*e.length)]]=Math.random()<.9?2:4}
-function init(){g=Array(16).fill(0);sc=0;over=false;add();add();render();document.getElementById('m').textContent='Vuốt để gộp các ô bằng nhau'}
+function add(){var e=[];g.forEach(function(v,i){if(!v)e.push(i)});if(e.length)g[e[Math.floor(Math.random()*e.length)]]=Math.random()<(lv=='D'?.96:lv=='K'?.78:.9)?2:4}
+function init(){g=Array(16).fill(0);sc=0;over=false;add();add();if(lv=='D')add();render();document.getElementById('m').textContent='Vuốt để gộp các ô bằng nhau'}
+document.querySelectorAll('#lv2048 button').forEach(function(b){b.onclick=function(){lv=b.dataset.l;document.querySelectorAll('#lv2048 button').forEach(function(o){o.className=o===b?'on':''});init()}})
 function render(){var d=document.getElementById('bd');d.innerHTML='';g.forEach(function(v){var e=document.createElement('div');e.textContent=v||'';e.style.background=col[v]||'#000';e.style.color=v>4?'#fff':'#1F2937';if(v>=1024)e.style.fontSize='20px';d.appendChild(e)});document.getElementById('sc').textContent='Điểm '+sc+' · Kỷ lục '+best('g2048')}
 function line(a){var r=a.filter(Boolean),o=[];for(var i=0;i<r.length;i++){if(r[i]==r[i+1]){o.push(r[i]*2);sc+=r[i]*2;i++}else o.push(r[i])}while(o.length<4)o.push(0);return o}
 function mv(d){if(over)return;var n=g.slice();for(var k=0;k<4;k++){var idx=[0,1,2,3].map(function(j){return d=='L'?k*4+j:d=='R'?k*4+3-j:d=='U'?j*4+k:(3-j)*4+k});var l=line(idx.map(function(i){return g[i]}));idx.forEach(function(i,j){n[i]=l[j]})}
 if(n.join()==g.join())return;g=n;add();best('g2048',sc);render();if(!can()){over=true;document.getElementById('m').textContent='Hết nước đi! Điểm: '+sc}}
 function can(){if(g.some(function(v){return!v}))return true;for(var i=0;i<16;i++){if(i%4<3&&g[i]==g[i+1])return true;if(i<12&&g[i]==g[i+4])return true}return false}
 sw(document.body,mv);document.getElementById('rs').onclick=init;init()};
-G.mem=function(){frame('','<div class="g4 mem" id="bd"></div><div class="msg" id="m">Lật hai thẻ giống nhau</div><button class="b" id="rs" style="width:100%">Ván mới</button>');
-var em=['🍎','🍋','🍇','🐱','🐶','🚗','⭐','🎈'],c,up,ok,mv,lock;
-function init(){c=em.concat(em).sort(function(){return Math.random()-.5});up=[];ok={};mv=0;lock=false;render();document.getElementById('m').textContent='Lật hai thẻ giống nhau'}
+G.mem=function(){var lv='V';frame('','<div class="lvs" id="lvMem"><button data-l="D">Dễ</button><button data-l="V" class="on">Bình thường</button><button data-l="K">Khó</button></div><div class="g4 mem" id="bd"></div><div class="msg" id="m">Lật hai thẻ giống nhau</div><button class="b" id="rs" style="width:100%">Ván mới</button>');
+var allEm=['🍎','🍋','🍇','🐱','🐶','🚗','⭐','🎈','🐸','🌻','🍉','🦊'],em,c,up,ok,mv,lock;
+function init(){em=allEm.slice(0,lv=='D'?4:lv=='K'?12:8);c=em.concat(em).sort(function(){return Math.random()-.5});up=[];ok={};mv=0;lock=false;render();document.getElementById('m').textContent='Lật hai thẻ giống nhau'}
+document.querySelectorAll('#lvMem button').forEach(function(b){b.onclick=function(){lv=b.dataset.l;document.querySelectorAll('#lvMem button').forEach(function(o){o.className=o===b?'on':''});init()}})
 function render(){var d=document.getElementById('bd');d.innerHTML='';c.forEach(function(v,i){var e=document.createElement('div');e.textContent=v;if(ok[i])e.className='ok';else if(up.indexOf(i)>=0)e.className='up';e.onclick=function(){flip(i)};d.appendChild(e)});document.getElementById('sc').textContent='Lượt '+mv}
-function flip(i){if(lock||ok[i]||up.indexOf(i)>=0)return;up.push(i);render();if(up.length==2){mv++;lock=true;var a=up[0],b=up[1];setTimeout(function(){if(c[a]==c[b]){ok[a]=ok[b]=1}up=[];lock=false;render();if(Object.keys(ok).length==16){document.getElementById('m').textContent='Xong sau '+mv+' lượt! 🎉';best('mem_inv',1000-mv)}},700)}}
+function flip(i){if(lock||ok[i]||up.indexOf(i)>=0)return;up.push(i);render();if(up.length==2){mv++;lock=true;var a=up[0],b=up[1];setTimeout(function(){if(c[a]==c[b]){ok[a]=ok[b]=1}up=[];lock=false;render();if(Object.keys(ok).length==c.length){document.getElementById('m').textContent='Xong sau '+mv+' lượt! 🎉';best('mem_inv',1000-mv)}},700)}}
 document.getElementById('rs').onclick=init;init()};
 G.tetris=function(){frame('','<canvas id="c" width="200" height="400" style="width:56%;margin:0 auto"></canvas><div class="msg" id="m">Vuốt trái phải để di chuyển, vuốt lên để xoay, vuốt xuống để rơi nhanh</div><div class="dp"><button class="b" data-a="L">◀</button><button class="b" data-a="R2">⟳</button><button class="b" data-a="R">▶</button><button class="b" data-a="D">▼</button><button class="b" data-a="H">⤓</button><button class="b" data-a="N">Mới</button></div>');
 var C=document.getElementById('c'),x=C.getContext('2d'),bd,p,sc,ln,lv,over,t;
