@@ -111,8 +111,8 @@ class MainActivity : Activity() {
     private val cream = Color.parseColor("#FAF5F0")
     private val line = Color.parseColor("#EFE6DE")
     private val folds = HashMap<String, Boolean>()
-    private val groupPages = arrayOf(intArrayOf(0, 1, 2), intArrayOf(5, 3, 4))
-    private val groupNames = arrayOf(arrayOf("Thời gian", "Tập trung", "Nhắc nhở"), arrayOf("Bản thân", "Tiện ích", "Trò chơi"))
+    private val groupPages = arrayOf(intArrayOf(0, 1, 2), intArrayOf(5, 6, 3, 4))
+    private val groupNames = arrayOf(arrayOf("Thời gian", "Tập trung", "Nhắc nhở"), arrayOf("Bản thân", "Toán Lý", "Tiện ích", "Trò chơi"))
     private val lastPage = intArrayOf(0, 5)
     private lateinit var subRow: LinearLayout
     private lateinit var hdrStatus: TextView
@@ -128,6 +128,7 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var gameWeb: WebView
     private lateinit var wellWeb: WebView
+    private lateinit var sciWeb: WebView
     private var selDay = 0L
     private lateinit var navItems: Array<TextView>
     private var tab = 0
@@ -385,6 +386,18 @@ class MainActivity : Activity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
+    private fun makeSci(): WebView {
+        val w = WebView(this)
+        w.settings.javaScriptEnabled = true
+        w.settings.domStorageEnabled = true
+        w.webViewClient = WebViewClient()
+        w.setBackgroundColor(Color.TRANSPARENT)
+        val html = assets.open("science.html").bufferedReader().use { it.readText() }
+        w.loadDataWithBaseURL("https://tau.app/sci/", html, "text/html", "utf-8", null)
+        return w
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
     private fun makeWell(): WebView {
         val w = WebView(this)
         w.settings.javaScriptEnabled = true
@@ -460,6 +473,8 @@ class MainActivity : Activity() {
         content.addView(gameWeb, FrameLayout.LayoutParams(-1, -1))
         wellWeb = makeWell()
         content.addView(wellWeb, FrameLayout.LayoutParams(-1, -1))
+        sciWeb = makeSci()
+        content.addView(sciWeb, FrameLayout.LayoutParams(-1, -1))
 
         val nav = LinearLayout(this)
         nav.setBackgroundColor(Color.WHITE)
@@ -532,13 +547,14 @@ class MainActivity : Activity() {
         web.visibility = if (i == 3) View.VISIBLE else View.GONE
         gameWeb.visibility = if (i == 4) View.VISIBLE else View.GONE
         wellWeb.visibility = if (i == 5) View.VISIBLE else View.GONE
+        sciWeb.visibility = if (i == 6) View.VISIBLE else View.GONE
         if (i == 5) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         subRow.removeAllViews()
-        for (k in 0..2) {
+        for (k in groupPages[g].indices) {
             val pg = groupPages[g][k]
             val b = seg(groupNames[g][k], pg == i) { showTab(pg) }
             val lp = LinearLayout.LayoutParams(0, -2, 1f)
-            if (k < 2) lp.rightMargin = dp(6)
+            if (k < groupPages[g].size - 1) lp.rightMargin = dp(6)
             subRow.addView(b, lp)
         }
         for (k in 0 until 2) {

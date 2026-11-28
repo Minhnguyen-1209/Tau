@@ -1,0 +1,162 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:sans-serif;color:#1F2937;background:transparent}
+#app{padding:4px 16px 40px;max-width:560px;margin:0 auto}
+.seg{display:flex;margin:0 0 12px;border-bottom:1px solid #EFE6DE}
+.seg button{flex:1;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:10px 2px;font-size:14px;background:none;color:#6B7280}
+.seg button.on{color:#C2410C;font-weight:bold;border-bottom-color:#F26B1D}
+.card{background:#fff;border:1px solid #EFE6DE;border-radius:18px;padding:14px;margin-bottom:12px}
+.mut{color:#6B7280;font-size:12px;line-height:1.45}
+.b{background:#C2410C;color:#fff;border:0;border-radius:12px;padding:9px 14px;font-size:13px;margin:4px 6px 0 0}
+.b.g{background:#F1E8E0;color:#6B4A3A}.b.r{background:#FEE2E2;color:#B91C1C}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.chips span{border:1px solid #E5DAD0;border-radius:16px;padding:6px 12px;font-size:13px;background:#fff}
+.chips span.on{background:#C2410C;border-color:#C2410C;color:#fff}
+input,select,textarea{width:100%;border:1px solid #E5DAD0;border-radius:12px;padding:10px;font-size:15px;background:#fff;margin-bottom:8px;font-family:inherit}
+textarea{font-size:17px;line-height:1.5;min-height:200px}
+.nt{padding:12px 0;border-bottom:1px solid #F3EDE7}.nt:last-child{border:0}
+.nt b{font-size:15px}.bd{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#FED7AA;color:#9A3412;margin-left:6px}
+.bd.ly{background:#DBEAFE;color:#1E40AF}.bd.khac{background:#E5E7EB;color:#374151}
+.sn{font-size:13px;color:#4B5563;margin-top:3px;white-space:pre-wrap;overflow:hidden;max-height:3.1em}
+.bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.pv{background:#FAF5F0;border-radius:12px;padding:12px;font-size:17px;line-height:1.7;white-space:pre-wrap;min-height:120px;margin-bottom:8px}
+.cs{height:1.3em;vertical-align:middle}
+.sy{display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:6px;margin-top:6px}
+.sy button{border:1px solid #E5DAD0;background:#FFF;border-radius:10px;padding:8px 0;font-size:20px;min-height:42px}
+.sy.w{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}.sy.w button{font-size:13px;padding:8px 4px}
+.sy img{height:26px}
+canvas#cv{width:100%;height:220px;background:#FAF5F0;border:1px dashed #D6C7BA;border-radius:14px;touch-action:none;display:block}
+.cd button{font-size:30px;min-width:56px;min-height:56px;border:1px solid #F26B1D;background:#FFF4EA;border-radius:12px;margin:4px 6px 0 0}
+.fm{white-space:pre-wrap;font-size:16px;line-height:1.6;background:#FAF5F0;border-radius:12px;padding:10px;margin:6px 0}
+.del{background:#FEE2E2;border-radius:12px;padding:10px;margin-bottom:8px;font-size:14px}
+</style></head><body><div id="app"></div>
+<script>
+var $=function(i){return document.getElementById(i)};
+function ls(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
+function sv(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+var A=$('app'),notes=ls('tau_sci_notes',[]),syms=ls('tau_sci_syms',[]),tab=0,view='list',cur=null,filt='all',q='',timer=null;
+var SUBJ={toan:'Toán',ly:'Vật lý',khac:'Khác'};
+var TOP={toan:['Đại số','Hình học','Giải tích','Lượng giác','Xác suất - Thống kê','Số học'],ly:['Cơ học','Nhiệt học','Điện - Từ','Quang học','Dao động - Sóng','Vật lý hiện đại'],khac:[]};
+var SUP={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻','=':'⁼','(':'⁽',')':'⁾',n:'ⁿ',i:'ⁱ',x:'ˣ',a:'ᵃ',b:'ᵇ',c:'ᶜ',d:'ᵈ',e:'ᵉ',f:'ᶠ',g:'ᵍ',h:'ʰ',j:'ʲ',k:'ᵏ',l:'ˡ',m:'ᵐ',o:'ᵒ',p:'ᵖ',r:'ʳ',s:'ˢ',t:'ᵗ',u:'ᵘ',v:'ᵛ',w:'ʷ',y:'ʸ',z:'ᶻ'};
+var SUB={'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋','=':'₌','(':'₍',')':'₎',a:'ₐ',e:'ₑ',h:'ₕ',i:'ᵢ',j:'ⱼ',k:'ₖ',l:'ₗ',m:'ₘ',n:'ₙ',o:'ₒ',p:'ₚ',r:'ᵣ',s:'ₛ',t:'ₜ',u:'ᵤ',v:'ᵥ',x:'ₓ'};
+var PAL=[['Cơ bản','± ∓ × ÷ · ≠ ≈ ≡ ≤ ≥ ≪ ≫ ∝ ∞ ‰ ° ′ ″ √ ∛ ∜ ½ ⅓ ¼ ⅔ ¾ ² ³ ⁿ π'],
+['Giải tích','∑ ∏ ∫ ∬ ∭ ∮ ∂ ∇ ∆ → ⟶ ′ ∞ ≈'],
+['Tập hợp, logic','∈ ∉ ∋ ⊂ ⊃ ⊆ ⊇ ∪ ∩ ∅ ∖ ℝ ℕ ℤ ℚ ℂ ∀ ∃ ∄ ¬ ∧ ∨ ⇒ ⇔ ⟹ ⟺ ∴ ∵ ⊕ ⊗'],
+['Hình học','∠ ∟ ⊥ ∥ ∦ △ □ ○ ◇ ≅ ∼ ≃ ° ′ ″ → ↔ ⃗ ̅ ̂'],
+['Hy Lạp','α β γ δ ε ζ η θ ι κ λ μ ν ξ ο π ρ σ τ υ φ χ ψ ω Γ Δ Θ Λ Ξ Π Σ Φ Ψ Ω ϕ ϑ ϵ'],
+['Vật lý','ħ ℏ Å Ω ℓ ρ λ ν ∆ → ⃗ ⇌ ⇄ ↑ ↓ ← ↔ ⊙ ⊗ ∥ ⊥ ≈ ∝ ∮ ⟨ ⟩ † ‖ °C °F'],
+['Đơn vị','m/s|m/s²|kg·m/s|N·m|J|W|Pa|Hz|V|Ω|A|C|T|K|mol|cd|m³|kg/m³|J/(kg·K)|eV|N/m|rad/s|m/s^2'],
+['Mẫu','( ) / ( )|√( )|∫₀¹ f(x) dx|∑ᵢ₌₁ⁿ aᵢ|limₓ→₀ f(x)|d/dx|∂/∂x|\\|x\\||x² + y² = r²|a² + b² = c²|Δ = b² − 4ac|x = (−b ± √Δ) / (2a)|sin²x + cos²x = 1|F = ma|v = v₀ + at|E = mc²|U = IR|P = UI|W = F·s·cosα']];
+var FORM=[
+['toan','Đại số','Hằng đẳng thức','(a + b)² = a² + 2ab + b²\n(a − b)² = a² − 2ab + b²\na² − b² = (a − b)(a + b)\n(a + b)³ = a³ + 3a²b + 3ab² + b³\na³ − b³ = (a − b)(a² + ab + b²)'],
+['toan','Đại số','Phương trình bậc hai','ax² + bx + c = 0 (a ≠ 0)\nΔ = b² − 4ac\nΔ > 0: x₁,₂ = (−b ± √Δ) / (2a)\nΔ = 0: x = −b / (2a)\nΔ < 0: vô nghiệm thực\nViète: x₁ + x₂ = −b/a, x₁x₂ = c/a'],
+['toan','Đại số','Cấp số cộng và nhân','Cấp số cộng: uₙ = u₁ + (n − 1)d, Sₙ = n(u₁ + uₙ) / 2\nCấp số nhân: uₙ = u₁qⁿ⁻¹, Sₙ = u₁(1 − qⁿ) / (1 − q)'],
+['toan','Đại số','Logarit','logₐ(xy) = logₐx + logₐy\nlogₐ(x/y) = logₐx − logₐy\nlogₐ(xᵏ) = k·logₐx\nlogₐb = ln b / ln a\naˡᵒᵍₐˣ = x'],
+['toan','Đại số','Bất đẳng thức','AM-GM: (a + b)/2 ≥ √(ab) với a, b ≥ 0\nCauchy-Schwarz: (a₁b₁ + a₂b₂)² ≤ (a₁² + a₂²)(b₁² + b₂²)\n|a + b| ≤ |a| + |b|'],
+['toan','Lượng giác','Công thức cơ bản','sin²x + cos²x = 1\ntan x = sin x / cos x\n1 + tan²x = 1 / cos²x\n1 + cot²x = 1 / sin²x'],
+['toan','Lượng giác','Cộng và nhân đôi','sin(a ± b) = sin a cos b ± cos a sin b\ncos(a ± b) = cos a cos b ∓ sin a sin b\nsin 2a = 2 sin a cos a\ncos 2a = cos²a − sin²a = 2cos²a − 1 = 1 − 2sin²a'],
+['toan','Lượng giác','Giá trị đặc biệt','sin 30° = 1/2, cos 30° = √3/2, tan 30° = √3/3\nsin 45° = cos 45° = √2/2, tan 45° = 1\nsin 60° = √3/2, cos 60° = 1/2, tan 60° = √3\nπ rad = 180°'],
+['toan','Hình học','Tam giác','S = ½ · a · h\nS = ½ · ab · sin C\nHeron: S = √(p(p − a)(p − b)(p − c)), p = (a + b + c)/2\nĐịnh lý cos: c² = a² + b² − 2ab·cos C\nĐịnh lý sin: a/sin A = b/sin B = c/sin C = 2R'],
+['toan','Hình học','Đường tròn, hình cầu','Chu vi đường tròn: C = 2πr\nDiện tích hình tròn: S = πr²\nHình cầu: V = (4/3)πr³, S = 4πr²\nHình trụ: V = πr²h, Sxq = 2πrh\nHình nón: V = (1/3)πr²h'],
+['toan','Hình học','Toạ độ trong mặt phẳng','AB = √((x_B − x_A)² + (y_B − y_A)²)\nTrung điểm M = ((x_A + x_B)/2, (y_A + y_B)/2)\nKhoảng cách điểm đến đường thẳng: d = |ax₀ + by₀ + c| / √(a² + b²)\nPhương trình đường tròn: (x − a)² + (y − b)² = R²'],
+['toan','Giải tích','Đạo hàm cơ bản','(xⁿ)′ = n·xⁿ⁻¹\n(eˣ)′ = eˣ, (aˣ)′ = aˣ ln a\n(ln x)′ = 1/x\n(sin x)′ = cos x, (cos x)′ = −sin x\n(tan x)′ = 1 / cos²x\n(uv)′ = u′v + uv′, (u/v)′ = (u′v − uv′) / v²'],
+['toan','Giải tích','Tích phân cơ bản','∫ xⁿ dx = xⁿ⁺¹/(n + 1) + C (n ≠ −1)\n∫ 1/x dx = ln|x| + C\n∫ eˣ dx = eˣ + C\n∫ sin x dx = −cos x + C\n∫ cos x dx = sin x + C\nNewton-Leibniz: ∫ₐᵇ f(x) dx = F(b) − F(a)'],
+['toan','Giải tích','Giới hạn','limₓ→₀ sin x / x = 1\nlimₓ→∞ (1 + 1/x)ˣ = e\nlimₓ→₀ (eˣ − 1) / x = 1\nlimₓ→₀ ln(1 + x) / x = 1'],
+['toan','Xác suất - Thống kê','Tổ hợp và xác suất','Hoán vị: Pₙ = n!\nChỉnh hợp: Aₙᵏ = n! / (n − k)!\nTổ hợp: Cₙᵏ = n! / (k!(n − k)!)\nP(A) = n(A) / n(Ω)\nP(A ∪ B) = P(A) + P(B) − P(A ∩ B)\nP(A|B) = P(A ∩ B) / P(B)'],
+['toan','Xác suất - Thống kê','Thống kê','Trung bình: x̄ = (x₁ + … + xₙ) / n\nPhương sai: σ² = (1/n) ∑ (xᵢ − x̄)²\nĐộ lệch chuẩn: σ = √σ²'],
+['toan','Số học','Chia hết và số nguyên tố','Chia hết cho 3: tổng các chữ số chia hết cho 3\nChia hết cho 9: tổng các chữ số chia hết cho 9\nUCLN(a, b) · BCNN(a, b) = a · b\nĐồng dư: a ≡ b (mod m) ⇔ m | (a − b)'],
+['ly','Cơ học','Chuyển động thẳng đều và biến đổi đều','Thẳng đều: x = x₀ + vt\nBiến đổi đều: v = v₀ + at\ns = v₀t + ½at²\nv² − v₀² = 2as\nRơi tự do: v = gt, h = ½gt² (g ≈ 9,8 m/s²)'],
+['ly','Cơ học','Định luật Newton','Định luật II: F⃗ = m·a⃗\nĐịnh luật III: F⃗₁₂ = −F⃗₂₁\nTrọng lực: P = mg\nLực ma sát trượt: F = μN\nLực đàn hồi: F = k|Δl|\nHấp dẫn: F = G·m₁m₂ / r²'],
+['ly','Cơ học','Công, năng lượng, động lượng','Công: A = F·s·cosα\nCông suất: P = A / t\nĐộng năng: Wđ = ½mv²\nThế năng trọng trường: Wt = mgh\nĐộng lượng: p⃗ = m·v⃗\nĐịnh lý động lượng: F⃗·Δt = Δp⃗'],
+['ly','Cơ học','Chuyển động tròn','v = ωr, ω = 2π/T = 2πf\nGia tốc hướng tâm: aₕₜ = v²/r = ω²r\nLực hướng tâm: Fₕₜ = m·v²/r'],
+['ly','Dao động - Sóng','Dao động điều hoà','x = A·cos(ωt + φ)\nv = −ωA·sin(ωt + φ)\na = −ω²x\nCon lắc lò xo: T = 2π√(m/k)\nCon lắc đơn: T = 2π√(l/g)\nCơ năng: W = ½kA²'],
+['ly','Dao động - Sóng','Sóng cơ','v = λ·f = λ/T\nPhương trình sóng: u = A·cos(ωt − 2πx/λ)\nGiao thoa cực đại: d₂ − d₁ = kλ\nSóng dừng hai đầu cố định: l = k·λ/2'],
+['ly','Nhiệt học','Chất khí và nhiệt','Phương trình trạng thái: pV = nRT (R = 8,31 J/(mol·K))\nĐẳng nhiệt: p₁V₁ = p₂V₂\nĐẳng áp: V₁/T₁ = V₂/T₂\nNhiệt lượng: Q = mcΔt\nNguyên lý I: ΔU = A + Q'],
+['ly','Điện - Từ','Điện học','Định luật Ohm: I = U / R\nCông suất: P = UI = I²R = U²/R\nĐiện trở nối tiếp: R = R₁ + R₂\nĐiện trở song song: 1/R = 1/R₁ + 1/R₂\nCoulomb: F = k·|q₁q₂| / r² (k = 9·10⁹ N·m²/C²)\nĐiện năng: A = UIt'],
+['ly','Điện - Từ','Từ trường và cảm ứng','Lực Lorentz: F = |q|vB·sinα\nLực từ: F = BIl·sinα\nSuất điện động cảm ứng: e = −ΔΦ/Δt\nTừ thông: Φ = BS·cosα\nMáy biến áp: U₁/U₂ = N₁/N₂'],
+['ly','Điện - Từ','Dòng điện xoay chiều','u = U₀·cos(ωt + φ)\nU = U₀/√2, I = I₀/√2\nCảm kháng: Z_L = ωL, dung kháng: Z_C = 1/(ωC)\nTổng trở: Z = √(R² + (Z_L − Z_C)²)\nCông suất: P = UI·cosφ'],
+['ly','Quang học','Quang hình','Khúc xạ: n₁·sin i = n₂·sin r\nPhản xạ toàn phần: sin i_gh = n₂/n₁\nThấu kính: 1/f = 1/d + 1/d′\nSố phóng đại: k = −d′/d\nĐộ tụ: D = 1/f (đi-ốp)'],
+['ly','Vật lý hiện đại','Lượng tử và hạt nhân','Năng lượng photon: ε = hf = hc/λ (h = 6,626·10⁻³⁴ J·s)\nHệ thức Einstein: E = mc²\nQuang điện: hf = A + ½mv₀max²\nPhóng xạ: N = N₀·2⁻ᵗ/ᵀ\nĐộ hụt khối: Δm = Zmₚ + (A − Z)mₙ − mₙhân']];
+var CAT=0,tmpCat=0;
+
+function tabs(){return '<div class="seg">'+['Ghi chú','Công thức'].map(function(n,i){return '<button class="'+(i==tab?'on':'')+'" onclick="goTab('+i+')">'+n+'</button>'}).join('')+'</div>'}
+function goTab(i){tab=i;view='list';cur=null;draw()}
+function draw(){if(view=='edit'){editor();return}A.innerHTML=tabs()+'<div id="v"></div>';tab==0?list():lib()}
+
+/* ---------- Danh sách ghi chú ---------- */
+function list(){var h='<div class="card"><button class="b" onclick="newNote()">+ Ghi chú mới</button><input id="sq" placeholder="Tìm trong ghi chú..." oninput="q=this.value;renderList()" value="'+esc(q)+'" style="margin-top:10px"><div class="chips">'+[['all','Tất cả'],['toan','Toán'],['ly','Vật lý'],['khac','Khác']].map(function(c){return '<span class="'+(filt==c[0]?'on':'')+'" onclick="filt=\''+c[0]+'\';draw()">'+c[1]+'</span>'}).join('')+'</div></div><div class="card" id="nl"></div>';$('v').innerHTML=h;renderList()}
+function renderList(){var t=q.toLowerCase(),r=notes.filter(function(n){return(filt=='all'||n.subj==filt)&&(!t||(n.title+' '+n.body+' '+n.topic).toLowerCase().indexOf(t)>=0)}).sort(function(a,b){return b.ts-a.ts}),h='';
+r.forEach(function(n){var d=new Date(n.ts);h+='<div class="nt" onclick="openNote(\''+n.id+'\')"><b>'+esc(n.title||'(chưa có tiêu đề)')+'</b><span class="bd '+n.subj+'">'+SUBJ[n.subj]+(n.topic?' · '+esc(n.topic):'')+'</span><div class="sn">'+esc(n.body.slice(0,160))+'</div><div class="mut">'+d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear()+'</div></div>'});
+$('nl').innerHTML=h||'<div class="mut">'+(notes.length?'Không có ghi chú phù hợp.':'Chưa có ghi chú nào. Bấm "Ghi chú mới" hoặc sao chép một công thức từ tab Công thức.')+'</div>'}
+function newNote(subj,title,body){cur={id:Date.now().toString(36),subj:subj||(filt=='ly'?'ly':'toan'),topic:'',title:title||'',body:body||'',ts:Date.now(),isNew:true};view='edit';draw()}
+function openNote(id){cur=notes.filter(function(n){return n.id==id})[0];if(!cur)return;view='edit';draw()}
+
+/* ---------- Soạn ghi chú ---------- */
+var delAsk=false,prev=false,pad=false;
+function editor(){delAsk=false;prev=false;pad=false;
+A.innerHTML='<div class="bar"><button class="b g" onclick="back()">← Danh sách</button><span><button class="b g" id="pvb" onclick="togglePrev()">Xem</button><button class="b r" onclick="askDel()">Xoá</button></span></div><div id="da"></div>'+
+'<div class="card"><select id="es" onchange="chSubj()">'+Object.keys(SUBJ).map(function(k){return '<option value="'+k+'"'+(cur.subj==k?' selected':'')+'>'+SUBJ[k]+'</option>'}).join('')+'</select><input id="et" list="tp" placeholder="Chủ đề (ví dụ: Đạo hàm)" value="'+esc(cur.topic)+'"><datalist id="tp"></datalist><input id="ei" placeholder="Tiêu đề" value="'+esc(cur.title)+'"><textarea id="ed" placeholder="Viết ghi chú. Dùng bảng ký hiệu bên dưới, hoặc vẽ ký hiệu bằng tay.">'+esc(cur.body)+'</textarea><div class="pv" id="pv" hidden></div>'+
+'<div><button class="b g" onclick="scr(SUP)">x² (chỉ số trên)</button><button class="b g" onclick="scr(SUB)">x₂ (chỉ số dưới)</button><button class="b" onclick="togglePad()">✍ Vẽ ký hiệu</button></div></div><div id="padc"></div><div class="card"><div class="chips" id="cats"></div><div class="sy" id="syg"></div><div class="mut" style="margin-top:8px">Chạm ký hiệu để chèn vào vị trí con trỏ. Ký hiệu của riêng bạn nằm ở mục "Của tôi".</div></div>';
+chSubj(true);['es','et','ei','ed'].forEach(function(i){$(i).addEventListener('input',function(){saveSoon()})});drawPal()}
+function chSubj(first){var s=$('es').value;$('tp').innerHTML=TOP[s].map(function(t){return '<option value="'+t+'">'}).join('');if(!first)saveSoon()}
+function saveSoon(){clearTimeout(timer);timer=setTimeout(save,400)}
+function save(){if(!cur||!$('ed'))return;cur.subj=$('es').value;cur.topic=$('et').value;cur.title=$('ei').value;cur.body=$('ed').value;if(!cur.title&&!cur.body.trim()){return}cur.ts=Date.now();var i=notes.findIndex(function(n){return n.id==cur.id});if(i<0)notes.push(cur);sv('tau_sci_notes',notes)}
+function back(){save();view='list';cur=null;draw()}
+function askDel(){$('da').innerHTML='<div class="del">Xoá ghi chú này? <button class="b r" onclick="doDel()">Xoá hẳn</button><button class="b g" onclick="$(\'da\').innerHTML=\'\'">Giữ lại</button></div>'}
+function doDel(){notes=notes.filter(function(n){return n.id!=cur.id});sv('tau_sci_notes',notes);cur=null;view='list';draw()}
+function togglePrev(){save();prev=!prev;$('pv').hidden=!prev;$('ed').hidden=prev;$('pvb').textContent=prev?'Sửa':'Xem';if(prev)$('pv').innerHTML=render($('ed').value)}
+function render(t){var h=esc(t);syms.forEach(function(s){h=h.split('⟦'+esc(s.name)+'⟧').join('<img class="cs" src="'+s.png+'">')});return h}
+function ins(t,back){var e=$('ed');if(prev)togglePrev();var s=e.selectionStart,en=e.selectionEnd;e.value=e.value.slice(0,s)+t+e.value.slice(en);var p=s+t.length-(back||0);e.focus();e.setSelectionRange(p,p);saveSoon()}
+function scr(M){var e=$('ed'),s=e.selectionStart,en=e.selectionEnd;if(s==en&&s>0){s=s-1}var seg=e.value.slice(s,en),o=seg.split('').map(function(c){return M[c]||M[c.toLowerCase()]||c}).join('');e.value=e.value.slice(0,s)+o+e.value.slice(en);e.focus();e.setSelectionRange(s+o.length,s+o.length);saveSoon()}
+function drawPal(){var c=$('cats');c.innerHTML=PAL.map(function(p,i){return '<span class="'+(i==CAT?'on':'')+'" onclick="CAT='+i+';drawPal()">'+p[0]+'</span>'}).join('')+'<span class="'+(CAT==99?'on':'')+'" onclick="CAT=99;drawPal()">Của tôi ('+syms.length+')</span>';
+var g=$('syg'),h='';if(CAT==99){g.className='sy';if(!syms.length)h='<div class="mut" style="grid-column:1/-1">Chưa có ký hiệu riêng. Bấm "Vẽ ký hiệu", vẽ rồi lưu để thêm vào đây.</div>';syms.forEach(function(s,i){h+='<button onclick="insCustom('+i+')">'+(s.ch?esc(s.ch):'<img src="'+s.png+'">')+'</button>'})}
+else{var p=PAL[CAT],w=p[1].indexOf('|')>=0,items=w?p[1].split('|'):p[1].split(' ');g.className='sy'+(w?' w':'');items.forEach(function(t){h+='<button data-t="'+esc(t)+'">'+esc(t)+'</button>'})}
+g.innerHTML=h;if(CAT!=99)g.querySelectorAll('button').forEach(function(b){b.onclick=function(){var t=b.dataset.t,k=t.indexOf('( )');ins(t,k>=0?t.length-k-1:0)}})}
+function insCustom(i){var s=syms[i];ins(s.ch||'⟦'+s.name+'⟧')}
+
+/* ---------- Bảng vẽ ký hiệu ---------- */
+var strokes=[],drawing=false,bank=null,rec=null;
+function togglePad(){pad=!pad;var c=$('padc');if(!pad){c.innerHTML='';return}
+c.innerHTML='<div class="card"><b>Vẽ ký hiệu</b><div class="mut">Vẽ một ký hiệu bằng ngón tay (nhiều nét cũng được). Tau gợi ý các ký hiệu giống nhất, chạm để chèn. Nếu không có, hãy lưu thành ký hiệu mới của bạn.</div><canvas id="cv" width="600" height="440"></canvas><div><button class="b g" onclick="undoS()">Hoàn tác nét</button><button class="b g" onclick="clearS()">Xoá hết</button></div><div class="cd" id="cd"></div><div id="sv" hidden><div class="mut" style="margin-top:8px">Không thấy ký hiệu đúng? Lưu nét vừa vẽ thành ký hiệu mới:</div><input id="sn" placeholder="Tên ký hiệu (ví dụ: tích có hướng)"><input id="sc" placeholder="Ký tự Unicode tương ứng nếu có (tuỳ chọn)" maxlength="4"><button class="b" onclick="saveSym()">Thêm vào bộ ký hiệu của tôi</button></div></div>';
+var cv=$('cv'),x=cv.getContext('2d');function pos(e){var r=cv.getBoundingClientRect();return[(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height]}
+cv.onpointerdown=function(e){e.preventDefault();cv.setPointerCapture(e.pointerId);drawing=true;clearTimeout(rec);strokes.push([pos(e)]);paint()};
+cv.onpointermove=function(e){if(!drawing)return;e.preventDefault();strokes[strokes.length-1].push(pos(e));paint()};
+cv.onpointerup=cv.onpointercancel=function(e){if(!drawing)return;drawing=false;rec=setTimeout(recog,700)};
+strokes=[];paint()}
+function paint(){var cv=$('cv');if(!cv)return;var x=cv.getContext('2d');x.clearRect(0,0,cv.width,cv.height);x.strokeStyle='#1F2937';x.lineWidth=9;x.lineCap='round';x.lineJoin='round';strokes.forEach(function(s){x.beginPath();s.forEach(function(p,i){i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1])});if(s.length==1)x.lineTo(s[0][0]+.1,s[0][1]);x.stroke()})}
+function undoS(){strokes.pop();paint();recog()}
+function clearS(){strokes=[];paint();$('cd').innerHTML='';$('sv').hidden=true}
+function bboxS(){var a=1e9,b=1e9,c=-1e9,d=-1e9;strokes.forEach(function(s){s.forEach(function(p){a=Math.min(a,p[0]);b=Math.min(b,p[1]);c=Math.max(c,p[0]);d=Math.max(d,p[1])})});return[a,b,c,d]}
+function rasterS(){var c=document.createElement('canvas');c.width=c.height=96;var x=c.getContext('2d'),bb=bboxS(),w=bb[2]-bb[0],h=bb[3]-bb[1],m=Math.max(w,h,1),sc=m<12?1:76/m;
+x.strokeStyle='#000';x.fillStyle='#000';x.lineWidth=7;x.lineCap='round';x.lineJoin='round';var ox=(96-w*sc)/2-bb[0]*sc,oy=(96-h*sc)/2-bb[1]*sc;
+strokes.forEach(function(s){x.beginPath();s.forEach(function(p,i){var X=p[0]*sc+ox,Y=p[1]*sc+oy;i?x.lineTo(X,Y):x.moveTo(X,Y)});if(s.length==1||m<12){x.arc(s[0][0]*sc+ox,s[0][1]*sc+oy,4,0,7);x.fill()}x.stroke()});return c}
+function grid(c96){var d=c96.getContext('2d').getImageData(0,0,96,96).data,a=96,b=96,c=-1,e=-1,i,j;for(j=0;j<96;j++)for(i=0;i<96;i++)if(d[(j*96+i)*4+3]>110){a=Math.min(a,i);b=Math.min(b,j);c=Math.max(c,i);e=Math.max(e,j)}
+if(c<0)return null;var bw=c-a+1,bh=e-b+1,sc=20/Math.max(bw,bh),dw=bw*sc,dh=bh*sc,t=document.createElement('canvas');t.width=t.height=24;var x=t.getContext('2d');x.drawImage(c96,a,b,bw,bh,(24-dw)/2,(24-dh)/2,dw,dh);
+var q=x.getImageData(0,0,24,24).data,g=new Float32Array(576),n;for(n=0;n<576;n++)g[n]=q[n*4+3]/255;return{g:g,ar:bw/bh}}
+function vec(g){var o=new Float32Array(576),y,x,dy,dx,s,c,n=0;for(y=0;y<24;y++)for(x=0;x<24;x++){s=0;c=0;for(dy=-2;dy<=2;dy++)for(dx=-2;dx<=2;dx++){var yy=y+dy,xx=x+dx;if(yy>=0&&yy<24&&xx>=0&&xx<24){s+=g[yy*24+xx];c++}}o[y*24+x]=s/c;n+=o[y*24+x]*o[y*24+x]}n=Math.sqrt(n)||1;for(var i=0;i<576;i++)o[i]/=n;return o}
+function glyph(ch,f){var c=document.createElement('canvas');c.width=c.height=96;var x=c.getContext('2d');x.fillStyle='#000';x.font=f||'64px serif';x.textAlign='center';x.textBaseline='middle';x.fillText(ch,48,50);return grid(c)}
+function dot(a,b){var s=0;for(var i=0;i<576;i++)s+=a[i]*b[i];return s}
+function buildBank(){if(bank)return;bank=[];var seen={},tf=glyph('￿'),tv=tf?vec(tf.g):null;
+PAL.forEach(function(p){if(p[1].indexOf('|')>=0)return;p[1].split(' ').forEach(function(ch){if(!ch||seen[ch]||ch.length>1||/[̀-ͯ⃐-⃿]/.test(ch))return;seen[ch]=1;var g=glyph(ch);if(!g)return;var v=vec(g.g);if(tv&&dot(v,tv)>.985)return;['italic 64px serif','64px sans-serif'].forEach(function(f){var g2=glyph(ch,f);if(g2)bank.push({ch:ch,v:vec(g2.g),ar:g2.ar})});bank.push({ch:ch,v:v,ar:g.ar})})})}
+function strGrid(s){var g=new Float32Array(576);for(var i=0;i<576;i++)g[i]=(+s[i]||0)/9;return g}
+function recog(){var cd=$('cd');if(!cd)return;if(!strokes.length){cd.innerHTML='';$('sv').hidden=true;return}buildBank();var u=grid(rasterS());if(!u)return;var uv=vec(u.g),sc=[];
+bank.forEach(function(b){sc.push({t:b.ch,s:dot(uv,b.v)-.3*Math.abs(Math.log(u.ar/b.ar))})});
+syms.forEach(function(s,i){var v=vec(strGrid(s.g));sc.push({t:s.ch||'',c:i,s:dot(uv,v)-.3*Math.abs(Math.log(u.ar/s.ar))+.03})});
+sc.sort(function(a,b){return b.s-a.s});var dd={};sc=sc.filter(function(r){var k=r.c!=null?'c'+r.c:r.t;if(dd[k])return false;dd[k]=1;return true});var h='<div class="mut" style="margin-top:8px">Gợi ý (chạm để chèn):</div>';sc.slice(0,8).forEach(function(r){if(r.c!=null){var s=syms[r.c];h+='<button onclick="pick(\'c'+r.c+'\')">'+(s.ch?esc(s.ch):'<img src="'+s.png+'" style="height:30px">')+'</button>'}else h+='<button onclick="pick(\''+r.t+'\')">'+esc(r.t)+'</button>'});
+cd.innerHTML=h;$('sv').hidden=false}
+function pick(t){if(t[0]=='c'&&t.length>1&&!isNaN(+t.slice(1)))insCustom(+t.slice(1));else ins(t);clearS()}
+function saveSym(){var n=$('sn').value.trim();if(!n){$('sn').focus();return}if(syms.some(function(s){return s.name==n})){$('sn').value=n+' 2';return}var c96=rasterS(),u=grid(c96);if(!u)return;var o=document.createElement('canvas');o.width=o.height=64;o.getContext('2d').drawImage(c96,0,0,96,96,0,0,64,64);
+var gs='';for(var i=0;i<576;i++)gs+=Math.round(u.g[i]*9);syms.push({name:n,ch:$('sc').value.trim(),png:o.toDataURL('image/png'),g:gs,ar:u.ar});sv('tau_sci_syms',syms);clearS();CAT=99;drawPal();$('sn').value=''}
+
+/* ---------- Thư viện công thức ---------- */
+var lf='all',lq='';
+function lib(){var h='<div class="card"><input id="lq" placeholder="Tìm công thức (đạo hàm, Newton, ...)" oninput="lq=this.value;libList()" value="'+esc(lq)+'"><div class="chips">'+[['all','Tất cả'],['toan','Toán'],['ly','Vật lý']].map(function(c){return '<span class="'+(lf==c[0]?'on':'')+'" onclick="lf=\''+c[0]+'\';lib()">'+c[1]+'</span>'}).join('')+'</div></div><div id="ll"></div>';$('v').innerHTML=h;libList()}
+function libList(){var t=lq.toLowerCase(),h='';FORM.forEach(function(f,i){if(lf!='all'&&f[0]!=lf)return;if(t&&(f[2]+' '+f[1]+' '+f[3]).toLowerCase().indexOf(t)<0)return;h+='<div class="card"><b>'+esc(f[2])+'</b><span class="bd '+f[0]+'">'+SUBJ[f[0]]+' · '+esc(f[1])+'</span><div class="fm">'+esc(f[3])+'</div><button class="b" onclick="fromLib('+i+')">Chép vào ghi chú mới</button><button class="b g" onclick="cp('+i+')" id="cp'+i+'">Sao chép</button></div>'});
+$('ll').innerHTML=h||'<div class="card mut">Không tìm thấy công thức.</div>'}
+function fromLib(i){var f=FORM[i];filt=f[0];newNote(f[0],f[2],f[3]);cur.topic=f[1];tab=0}
+function cp(i){var t=FORM[i][3],b=$('cp'+i);function ok(){b.textContent='Đã sao chép'}try{navigator.clipboard.writeText(t).then(ok,function(){fb()})}catch(e){fb()}function fb(){var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy');ok()}catch(e){b.textContent='Không sao chép được'}a.remove()}}
+draw();
+</script></body></html>
