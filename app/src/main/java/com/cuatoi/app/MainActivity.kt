@@ -415,7 +415,9 @@ class MainActivity : Activity() {
         w.webViewClient = WebViewClient()
         w.setBackgroundColor(Color.TRANSPARENT)
         w.addJavascriptInterface(GameBridge(), "TauGame")
+        val pet = assets.open("pet.js").bufferedReader().use { it.readText() }
         val html = assets.open("games.html").bufferedReader().use { it.readText() }
+            .replace("<script src=\"pet.js\"></script>", "<script>" + pet + "</script>")
         w.loadDataWithBaseURL("https://tau.app/games/", html, "text/html", "utf-8", null)
         return w
     }
