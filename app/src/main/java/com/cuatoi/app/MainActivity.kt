@@ -115,9 +115,9 @@ class MainActivity : Activity() {
     private val cream = Color.parseColor("#FAF5F0")
     private val line = Color.parseColor("#EFE6DE")
     private val folds = HashMap<String, Boolean>()
-    private val groupPages = arrayOf(intArrayOf(0, 1, 2), intArrayOf(5, 6, 3, 4))
-    private val groupNames = arrayOf(arrayOf("Thời gian", "Tập trung", "Nhắc nhở"), arrayOf("Bản thân", "Toán Lý", "Tiện ích", "Trò chơi"))
-    private val lastPage = intArrayOf(0, 5)
+    private val groupPages = arrayOf(intArrayOf(0, 1, 2), intArrayOf(5, 3, 4), intArrayOf(7, 6))
+    private val groupNames = arrayOf(arrayOf("Thời gian", "Tập trung", "Nhắc nhở"), arrayOf("Bản thân", "Tiền & ghi chú", "Trò chơi"), arrayOf("Tiếng Anh", "Toán Lý"))
+    private val lastPage = intArrayOf(0, 5, 7)
     private lateinit var subRow: LinearLayout
     private lateinit var hdrStatus: TextView
 
@@ -137,6 +137,11 @@ class MainActivity : Activity() {
     private var selDay = 0L
     private lateinit var navItems: Array<TextView>
     private var tab = 0
+    private var webMode = "life"
+    private var stopBtn: Button? = null
+    private fun applyWebMode() {
+        try { web.evaluateJavascript("window.setMode&&setMode('$webMode')", null) } catch (e: Exception) {}
+    }
     private var timeMode = 0
     private var gen = 0
     private var focusLabel: TextView? = null
@@ -371,7 +376,9 @@ class MainActivity : Activity() {
         w.settings.javaScriptEnabled = true
         w.settings.domStorageEnabled = true
         w.addJavascriptInterface(Bridge(), "TauApp")
-        w.webViewClient = WebViewClient()
+        w.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(v: WebView?, url: String?) { applyWebMode() }
+        }
         w.setBackgroundColor(cream)
         val html = assets.open("cuatoi.html").bufferedReader().use { it.readText() }
         w.loadDataWithBaseURL("https://tau.app/", html, "text/html", "utf-8", null)
@@ -508,8 +515,8 @@ class MainActivity : Activity() {
 
         val nav = LinearLayout(this)
         nav.setBackgroundColor(Color.WHITE)
-        val names = arrayOf("Điện thoại", "Cuộc sống")
-        navItems = Array(2) { g ->
+        val names = arrayOf("Điện thoại", "Cuộc sống", "Học tập")
+        navItems = Array(3) { g ->
             val t = TextView(this)
             t.text = names[g]
             t.gravity = Gravity.CENTER
@@ -570,18 +577,20 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (tab == 3 && web.canGoBack()) web.goBack() else if (tab != 0) showTab(0) else super.onBackPressed()
+        if ((tab == 3 || tab == 7) && web.canGoBack()) web.goBack() else if (tab != 0) showTab(0) else super.onBackPressed()
     }
 
     private fun showTab(i: Int) {
         if (i != 4 && chrome.isNotEmpty() && chrome[0].visibility == View.GONE) { GameBridge().fullscreen(false); gameWeb.evaluateJavascript("window.exitFs&&exitFs()", null) }
         tab = i
-        val g = if (i == 0 || i == 1 || i == 2) 0 else 1
+        val g = if (i == 0 || i == 1 || i == 2) 0 else if (i == 7 || i == 6) 2 else 1
         lastPage[g] = i
         sTime.visibility = if (i == 0) View.VISIBLE else View.GONE
         sFocus.visibility = if (i == 1) View.VISIBLE else View.GONE
         sHealth.visibility = if (i == 2) View.VISIBLE else View.GONE
-        web.visibility = if (i == 3) View.VISIBLE else View.GONE
+        web.visibility = if (i == 3 || i == 7) View.VISIBLE else View.GONE
+        if (i == 3 || i == 7) webMode = if (i == 7) "eng" else "life"
+        applyWebMode()
         gameWeb.visibility = if (i == 4) View.VISIBLE else View.GONE
         wellWeb.visibility = if (i == 5) View.VISIBLE else View.GONE
         sciWeb.visibility = if (i == 6) View.VISIBLE else View.GONE
@@ -594,7 +603,7 @@ class MainActivity : Activity() {
             if (k < groupPages[g].size - 1) lp.rightMargin = dp(6)
             subRow.addView(b, lp)
         }
-        for (k in 0 until 2) {
+        for (k in 0 until 3) {
             navItems[k].setTextColor(if (k == g) deep else mut)
             navItems[k].typeface = if (k == g) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
@@ -1230,8 +1239,13 @@ class MainActivity : Activity() {
             val sec = (left / 1000) % 60
             val st = if (sec < 10) "0$sec" else "$sec"
             l.text = "Đang tập trung · còn ${left / 60000}:$st"
+            val wait = Store.p(this).getInt("stop_wait", 30)
+            val req = Store.p(this).getLong("stop_req", 0L)
+            val el = if (req > 0) (System.currentTimeMillis() - req) / 1000 else -1L
+            stopBtn?.text = if (el < 0 || el > wait + 120) "Dừng" else if (el < wait) "Dừng (${wait - el}s)" else "Dừng ✔ bấm lại"
         } else {
             l.text = "Chưa bật chế độ tập trung"
+            stopBtn?.text = "Dừng"
         }
     }
 
@@ -1240,6 +1254,7 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Hãy tick ít nhất một app cần chặn ở danh sách bên dưới", Toast.LENGTH_LONG).show()
             return
         }
+        Store.p(this).edit().putLong("stop_req", 0L).apply()
         Store.focusBegin(this, System.currentTimeMillis(), minutes)
         Store.setFocusEnd(this, System.currentTimeMillis() + minutes * 60000L)
         updateFocusLabel()
@@ -1287,16 +1302,36 @@ class MainActivity : Activity() {
         for (m in intArrayOf(15, 25, 45, 60)) {
             row.addView(btn("${m}p") { startFocus(m) }, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        row.addView(btn("Dừng") {
-            if (Store.p(this).getBoolean("strict", false) && Store.focusEnd(this) > System.currentTimeMillis()) {
+        val sb = btn("Dừng") {
+            val pr = Store.p(this)
+            if (Store.focusEnd(this) <= System.currentTimeMillis()) {
+                updateFocusLabel()
+            } else if (pr.getBoolean("strict", false)) {
                 Toast.makeText(this, "Đang ở chế độ nghiêm ngặt: phải chờ hết giờ mới dừng được", Toast.LENGTH_LONG).show()
             } else {
-                Store.focusFinish(this, System.currentTimeMillis())
-                Store.setFocusEnd(this, 0L)
+                val wait = pr.getInt("stop_wait", 30)
+                val req = pr.getLong("stop_req", 0L)
+                val el = if (req > 0) (System.currentTimeMillis() - req) / 1000 else -1L
+                if (wait > 0 && (el < 0 || el > wait + 120)) {
+                    pr.edit().putLong("stop_req", System.currentTimeMillis()).apply()
+                    Toast.makeText(this, "Hãy chờ $wait giây rồi bấm Dừng lần nữa để tắt", Toast.LENGTH_LONG).show()
+                } else if (el < wait) {
+                    Toast.makeText(this, "Còn ${wait - el} giây nữa mới dừng được. Hít thở và quay lại việc đang làm nhé", Toast.LENGTH_SHORT).show()
+                } else {
+                    pr.edit().putLong("stop_req", 0L).apply()
+                    Store.focusFinish(this, System.currentTimeMillis())
+                    Store.setFocusEnd(this, 0L)
+                }
                 updateFocusLabel()
             }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        stopBtn = sb
+        row.addView(sb, LinearLayout.LayoutParams(0, -2, 1f))
         tc.addView(row)
+        val sw0 = Store.p(this).getInt("stop_wait", 30)
+        tc.addView(btn("Chờ trước khi được dừng: ${if (sw0 > 0) "$sw0 giây" else "tắt"}") {
+            askSec("Phải chờ bao nhiêu giây sau khi bấm Dừng (0 = dừng ngay)", sw0, 0, 600) { Store.p(this).edit().putInt("stop_wait", it).apply(); buildFocus() }
+        })
         val ssw = Switch(this)
         ssw.text = "Nghiêm ngặt: không cho dừng giữa chừng"
         ssw.textSize = 14f

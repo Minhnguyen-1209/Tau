@@ -347,6 +347,7 @@ object Usage {
         val e = UsageEvents.Event()
         var cur: String? = null
         var st = 0L
+        val act = HashSet<String>()
 
         fun close(t: Long) {
             val p = cur
@@ -356,17 +357,27 @@ object Usage {
 
         while (ev.hasNextEvent()) {
             ev.getNextEvent(e)
+            val k = e.packageName + "/" + (e.className ?: "")
             when (e.eventType) {
                 1 -> {
                     val p = e.packageName
+                    act.add(k)
                     if (cur != p) {
                         close(e.timeStamp)
                         cur = p
                         st = e.timeStamp
                     }
                 }
-                2 -> if (cur == e.packageName) close(e.timeStamp)
-                16, 17, 26 -> close(e.timeStamp)
+                2, 23, 24 -> {
+                    act.remove(k)
+                    // Chỉ kết thúc phiên khi app không còn màn hình nào đang mở
+                    val p = e.packageName
+                    if (cur == p && act.none { it.startsWith("$p/") }) close(e.timeStamp)
+                }
+                16, 17, 26 -> {
+                    act.clear()
+                    close(e.timeStamp)
+                }
             }
         }
         close(to)

@@ -191,11 +191,21 @@ class MonitorService : Service() {
     }
 
     /* ---------- Biết app nào đang mở ---------- */
-    private fun handle(type: Int, pkg: String) {
+    // Theo dõi từng màn hình (activity) đang mở. Một app như TikTok chuyển qua lại nhiều màn hình,
+    // nếu chỉ theo dõi theo tên app thì sự kiện "tạm dừng" của màn hình cũ làm app tưởng đã thoát.
+    private val act = LinkedHashSet<String>()
+
+    private fun handle(type: Int, pkg: String, cls: String) {
+        val k = "$pkg/$cls"
         when (type) {
-            1 -> fg = pkg
-            2 -> if (pkg == fg) fg = ""
+            1 -> {
+                act.remove(k)
+                act.add(k)
+            }
+            2, 23, 24 -> act.remove(k)
+            16, 17, 26 -> act.clear()
         }
+        fg = act.lastOrNull()?.substringBefore('/') ?: ""
     }
 
     private fun usm(): UsageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -206,7 +216,7 @@ class MonitorService : Service() {
         val e = UsageEvents.Event()
         while (ev.hasNextEvent()) {
             ev.getNextEvent(e)
-            handle(e.eventType, e.packageName)
+            handle(e.eventType, e.packageName, e.className ?: "")
         }
         evFrom = now - 1000L
     }
@@ -219,7 +229,7 @@ class MonitorService : Service() {
         val e = UsageEvents.Event()
         while (ev.hasNextEvent()) {
             ev.getNextEvent(e)
-            handle(e.eventType, e.packageName)
+            handle(e.eventType, e.packageName, e.className ?: "")
         }
     }
 
@@ -243,9 +253,10 @@ class MonitorService : Service() {
         refreshSys(now)
         val pkg = fg
         if (pkg.isEmpty()) {
-            // App vừa chuyển cảnh có thể trống một thoáng, chờ 1,5 giây mới coi là đã rời app
+            // Trống là "chưa rõ", không phải "đã thoát": thoát thật luôn có sự kiện màn hình chính hiện ra.
+            // Giữ nguyên app hiện tại tối đa 6 giây (đề phòng thiếu sự kiện) rồi mới coi là đã rời.
             if (emptySince == 0L) emptySince = now
-            if (now - emptySince >= 1500L) setCurrent("")
+            if (now - emptySince >= 6000L) setCurrent("")
             return
         }
         emptySince = 0L

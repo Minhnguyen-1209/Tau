@@ -63,16 +63,42 @@ summary{font-weight:500;cursor:pointer}
 
 <section id="tab-exp">
   <h1>Chi tiêu</h1>
+  <div class="chips" id="x-chips" style="margin-top:0"></div>
+  <div id="x-spend">
   <div class="card"><div class="mut">Hôm nay</div><div class="big" id="e-today">0 ₫</div><div class="mut" id="e-month"></div></div>
   <h2>Thêm khoản chi</h2>
   <div class="card stack">
     <div class="row"><input id="e-amt" type="number" inputmode="numeric" placeholder="Số tiền (₫)"><select id="e-cat"><option>Ăn uống</option><option>Đi lại</option><option>Mua sắm</option><option>Nhà cửa</option><option>Giải trí</option><option>Khác</option></select></div>
     <div class="row"><input id="e-note" placeholder="Ghi chú (không bắt buộc)"><button id="e-add">Thêm</button></div>
+    <label class="mut" id="e-fl" hidden><input type="checkbox" id="e-fund" checked style="width:auto"> Trừ từ quỹ riêng</label>
   </div>
   <h2>Tháng này theo nhóm</h2>
   <div class="card stack" id="e-cats"></div>
   <h2>Gần đây</h2>
   <div class="card" id="e-list"></div>
+  </div>
+  <div id="x-fund" hidden>
+    <div class="card stack"><b>Ngân sách tháng</b>
+      <div class="row"><input id="b-amt" type="number" inputmode="numeric" placeholder="Tối đa chi trong tháng (₫)"><button id="b-save">Lưu</button></div>
+      <div id="b-info"></div></div>
+    <h2>Quỹ riêng</h2>
+    <div class="card stack" id="f-box"></div>
+    <h2>Lịch sử quỹ</h2>
+    <div class="card" id="f-log"></div>
+  </div>
+  <div id="x-debt" hidden>
+    <div class="card" id="d-sum"></div>
+    <h2>Ghi khoản nợ</h2>
+    <div class="card stack">
+      <div class="row"><input id="d-who" placeholder="Tên người"><select id="d-dir"><option value="owe">Tôi nợ họ</option><option value="lent">Họ nợ tôi</option></select></div>
+      <div class="row"><input id="d-amt" type="number" inputmode="numeric" placeholder="Số tiền (₫)"><button id="d-add">Thêm</button></div>
+      <input id="d-note" placeholder="Ghi chú, hạn trả (không bắt buộc)">
+    </div>
+    <h2>Đang nợ</h2>
+    <div class="card" id="d-list"></div>
+    <h2>Đã xong</h2>
+    <div class="card" id="d-done"></div>
+  </div>
 </section>
 
 <section id="tab-note" hidden>
@@ -137,7 +163,7 @@ summary{font-weight:500;cursor:pointer}
 <script>
 (function(){
 var K="cua-toi-v1";
-var S={exp:[],notes:[],todos:[],focus:[],dis:{},screen:{},limit:180,mins:25,run:null,words:[],gram:[],dir:"en"};
+var S={exp:[],notes:[],todos:[],focus:[],dis:{},screen:{},limit:180,mins:25,run:null,words:[],gram:[],dir:"en",budget:0,fund:null,flog:[],debts:[]};
 try{var r=localStorage.getItem(K);if(r)S=Object.assign(S,JSON.parse(r));}catch(e){}
 if(S.todos&&S.todos.length){S.todos.forEach(function(t){S.notes.push({id:t.id,t:t.t,b:"",w:t.w,done:t.done,notified:t.notified})});S.todos=[]}
 function save(){try{localStorage.setItem(K,JSON.stringify(S));}catch(e){}}
@@ -181,6 +207,67 @@ $("e-add").onclick=function(){
   $("e-amt").value="";$("e-note").value="";save();renderExp();
 };
 $("e-list").onclick=function(ev){var id=ev.target.dataset.id;if(id){S.exp=S.exp.filter(function(e){return String(e.id)!==id});save();renderExp()}};
+
+/* ngân sách, quỹ, nợ */
+var XS="spend",XN=[["spend","Chi tiêu"],["fund","Ngân sách & quỹ"],["debt","Sổ nợ"]];
+function xtabs(){$("x-chips").innerHTML=XN.map(function(s){return '<button class="ghost" data-s="'+s[0]+'" aria-pressed="'+(XS===s[0])+'">'+s[1]+'</button>'}).join("");XN.forEach(function(s){$("x-"+s[0]).hidden=(XS!==s[0])})}
+$("x-chips").onclick=function(ev){var s=ev.target.dataset.s;if(s){XS=s;xtabs();renderExp()}};
+function nowTs(){return day()}
+function renderFund(){
+  $("e-fl").hidden=!S.fund;
+  var td=new Date(),mo=day().slice(0,7),m=0;S.exp.forEach(function(e){if(e.d.slice(0,7)===mo)m+=e.a});
+  var dl=new Date(td.getFullYear(),td.getMonth()+1,0).getDate()-td.getDate()+1;
+  if(S.budget>0){var rem=S.budget-m,pc=Math.min(100,m/S.budget*100);
+    $("b-info").innerHTML='<div class="row" style="justify-content:space-between"><span>Đã chi '+money(m)+'</span><span class="'+(rem<0?'od':'mut')+'">'+(rem<0?'Vượt '+money(-rem):'Còn '+money(rem))+'</span></div><div class="bar'+(rem<0?' over':'')+'"><i style="width:'+pc+'%"></i></div><div class="mut">'+(rem>0?'Còn '+dl+' ngày, mỗi ngày nên chi tối đa '+money(rem/dl):'Đã hết ngân sách tháng này, hạn chế chi thêm.')+'</div>'}
+  else $("b-info").innerHTML='<div class="mut">Chưa đặt ngân sách. Nhập số tiền tối đa bạn muốn chi trong một tháng.</div>';
+  if(S.budget)$("b-amt").placeholder="Hiện tại: "+money(S.budget);
+  var f=S.fund,h="";
+  if(!f){h='<div class="mut">Quỹ riêng là khoản tiền bạn để dành cho một mục đích. Mỗi khoản chi tick "Trừ từ quỹ" sẽ làm số dư giảm dần.</div><input id="f-name" placeholder="Tên quỹ (ví dụ: Quỹ đi chơi)"><div class="row"><input id="f-amt" type="number" inputmode="numeric" placeholder="Số tiền ban đầu (₫)"><button id="f-new">Tạo quỹ</button></div>'}
+  else{var pc2=f.init>0?Math.max(0,Math.min(100,f.bal/f.init*100)):0;
+    h='<div class="mut">'+esc(f.name||"Quỹ riêng")+'</div><div class="big'+(f.bal<0?' od':'')+'">'+money(f.bal)+'</div><div class="bar'+(pc2<20?' over':'')+'"><i style="width:'+pc2+'%"></i></div><div class="mut">Ban đầu và nạp thêm: '+money(f.init)+' · đã dùng '+money(Math.max(0,f.init-f.bal))+'</div><div class="row"><input id="f-add" type="number" inputmode="numeric" placeholder="Nạp thêm (₫)"><button id="f-in">Nạp</button></div><button class="ghost" id="f-del">Xoá quỹ</button>'}
+  $("f-box").innerHTML=h;
+  var lg=S.flog.slice().reverse().slice(0,20);
+  $("f-log").innerHTML=lg.length?lg.map(function(e){return '<div class="item"><div class="t"><b class="'+(e.t==='out'?'od':'')+'">'+(e.t==='out'?'−':'+')+money(e.a)+'</b>'+(e.n?' · '+esc(e.n):'')+'<div class="mut">'+e.d+'</div></div></div>'}).join(""):'<div class="mut">Chưa có biến động.</div>';
+}
+$("b-save").onclick=function(){var a=parseFloat($("b-amt").value);if(!(a>=0))return;S.budget=a;$("b-amt").value="";save();renderFund()};
+$("f-box").onclick=function(ev){var id=ev.target.id;
+  if(id==="f-new"){var a=parseFloat($("f-amt").value);if(!(a>=0)){$("f-amt").focus();return}S.fund={name:$("f-name").value.trim()||"Quỹ riêng",init:a,bal:a};S.flog.push({id:Date.now(),t:"in",a:a,n:"Số dư ban đầu",d:day()});save();renderExp()}
+  else if(id==="f-in"){var b=parseFloat($("f-add").value);if(!(b>0))return;S.fund.bal+=b;S.fund.init+=b;S.flog.push({id:Date.now(),t:"in",a:b,n:"Nạp thêm",d:day()});save();renderExp()}
+  else if(id==="f-del"){if(ev.target.dataset.sure){S.fund=null;S.flog=[];save();renderExp()}else{ev.target.dataset.sure="1";ev.target.textContent="Bấm lần nữa để xoá quỹ và lịch sử"}}};
+$("e-add").onclick=function(){
+  var a=parseFloat($("e-amt").value);if(!(a>0)){$("e-amt").focus();return}
+  var id=Date.now(),fd=!!(S.fund&&$("e-fund").checked);
+  S.exp.push({id:id,a:a,c:$("e-cat").value,n:$("e-note").value.trim(),d:day(),f:fd?1:0});
+  if(fd){S.fund.bal-=a;S.flog.push({id:id+1,eid:id,t:"out",a:a,n:$("e-cat").value+($("e-note").value.trim()?" · "+$("e-note").value.trim():""),d:day()})}
+  $("e-amt").value="";$("e-note").value="";save();renderExp();
+};
+$("e-list").onclick=function(ev){var id=ev.target.dataset.id;if(id){var e=S.exp.filter(function(x){return String(x.id)===id})[0];
+  if(e&&e.f&&S.fund){S.fund.bal+=e.a;S.flog=S.flog.filter(function(l){return String(l.eid)!==id})}
+  S.exp=S.exp.filter(function(x){return String(x.id)!==id});save();renderExp()}};
+function renderDebt(){
+  var owe=0,lent=0;S.debts.forEach(function(d){var r=d.a-d.p;if(r>0){if(d.k==="owe")owe+=r;else lent+=r}});
+  $("d-sum").innerHTML='<div class="row" style="justify-content:space-between"><div><div class="mut">Bạn đang nợ</div><div class="big od">'+money(owe)+'</div></div><div style="text-align:right"><div class="mut">Người khác nợ bạn</div><div class="big">'+money(lent)+'</div></div></div>';
+  function row(d){var r=d.a-d.p;return '<div class="item"><div class="t"><b>'+esc(d.w)+'</b> · '+(d.k==="owe"?"bạn nợ":"nợ bạn")+' <b class="'+(d.k==="owe"?'od':'')+'">'+money(r)+'</b>'+(d.p>0?' <span class="mut">(đã trả '+money(d.p)+'/'+money(d.a)+')</span>':'')+'<div class="mut">'+d.d+(d.n?' · '+esc(d.n):'')+'</div>'+(r>0?'<div class="row" style="margin-top:6px"><input type="number" inputmode="numeric" placeholder="Số tiền trả" data-pi="'+d.id+'" style="min-width:0"><button class="ghost" data-pay="'+d.id+'">Trả</button><button class="ghost" data-all="'+d.id+'">Xong hết</button></div>':'')+'</div><button class="x" data-del="'+d.id+'" aria-label="Xoá">×</button></div>'}
+  var a=S.debts.filter(function(d){return d.a-d.p>0}),b=S.debts.filter(function(d){return d.a-d.p<=0});
+  $("d-list").innerHTML=a.length?a.map(row).join(""):'<div class="mut">Không có khoản nợ nào.</div>';
+  $("d-done").innerHTML=b.length?b.map(row).join(""):'<div class="mut">Chưa có khoản nào hoàn tất.</div>';
+}
+$("d-add").onclick=function(){var w=$("d-who").value.trim(),a=parseFloat($("d-amt").value);if(!w){$("d-who").focus();return}if(!(a>0)){$("d-amt").focus();return}
+  S.debts.push({id:Date.now(),w:w,a:a,p:0,k:$("d-dir").value,n:$("d-note").value.trim(),d:day()});$("d-who").value="";$("d-amt").value="";$("d-note").value="";save();renderDebt()};
+function debtClick(ev){var t=ev.target,id=t.dataset.pay||t.dataset.all||t.dataset.del;if(!id)return;var d=S.debts.filter(function(x){return String(x.id)===id})[0];if(!d)return;
+  if(t.dataset.del){S.debts=S.debts.filter(function(x){return x!==d})}
+  else if(t.dataset.all){d.p=d.a}
+  else{var inp=document.querySelector('[data-pi="'+id+'"]'),v=parseFloat(inp&&inp.value);if(!(v>0))return;d.p=Math.min(d.a,d.p+v)}
+  save();renderDebt()}
+$("d-list").onclick=debtClick;$("d-done").onclick=debtClick;
+var _re=renderExp;renderExp=function(){_re();xtabs();renderFund();renderDebt()};
+/* chế độ hiển thị: life = chi tiêu và ghi chú, eng = tiếng Anh */
+window.setMode=function(m){var nb=document.querySelectorAll("nav button"),eng=m==="eng";
+  document.querySelector("nav").hidden=eng;$("motto").style.bottom=eng?"0":"";
+  ["exp","note","eng"].forEach(function(t){var on=eng?t==="eng":(t==="note"?$("tab-note").hidden===false:t==="exp"?$("tab-note").hidden!==false:false);$("tab-"+t).hidden=!on});
+  if(!eng){nb.forEach(function(x){x.setAttribute("aria-selected",x.dataset.tab===($("tab-note").hidden?"exp":"note"))});nb[2].hidden=true}
+  else{subs();study()}
+  window.scrollTo(0,0)};
 
 /* notes + reminders */
 var editId=null;
