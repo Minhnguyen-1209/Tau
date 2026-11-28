@@ -37,6 +37,12 @@ canvas{display:block;width:100%;background:#FAF5F0;border-radius:12px}
 .pop{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.pop button{aspect-ratio:1;border-radius:50%;border:0;box-shadow:inset 0 -5px 0 rgba(0,0,0,.2);transition:transform .08s}.pop button.dn{transform:scale(.88);box-shadow:inset 0 5px 8px rgba(0,0,0,.35);opacity:.7}
 .tray{display:flex;gap:8px;justify-content:center;margin-top:8px}.tray button{font-size:30px;background:#FFF4EA;border:1px solid #EFE6DE;border-radius:14px;width:58px;height:58px;touch-action:none}
 .rest{background:#ECFDF5;color:#065F46;border-radius:12px;padding:10px;margin-bottom:10px;font-size:14px}
+
+/* Polish chung: phản hồi chạm rõ hơn, chuyển động nhẹ và vùng bấm thân thiện */
+.menu button,.b,.lvs button,.gz button,.dp .b,.sdp .b{transition:transform .12s ease,box-shadow .12s ease,filter .12s ease}
+.menu button:active,.b:active,.lvs button:active,.gz button:active,.dp .b:active,.sdp .b:active{transform:scale(.98);filter:brightness(.97)}
+.card{box-shadow:0 5px 18px rgba(80,55,35,.055)}
+canvas{image-rendering:auto}
 </style></head><body><div id="app"></div>
 <script>
 var A=document.getElementById('app'),stop=null;
@@ -270,85 +276,97 @@ document.querySelectorAll('#lvTet button').forEach(function(b){b.onclick=functio
 document.querySelectorAll('.dp button').forEach(function(b){b.onclick=function(){if(b.dataset.a=='N')init();else mv(b.dataset.a)}});
 swf=function(d){mv(d=='U'?'R2':d)};stop=function(){clearTimeout(t)};init()};
 G.pen=function(){
-var LV={D:{name:'Dễ',keeper:1,smart:.20},V:{name:'Bình thường',keeper:2,smart:.58},K:{name:'Khó',keeper:3,smart:.88}};
-var lv='V',you,cpu,round,phase,done,busy,lastDive=-1,lastShot=-1;
-frame('','<div class="lvs" id="plv"><button data-lv="D">Dễ</button><button data-lv="V" class="on">Bình thường</button><button data-lv="K">Khó</button></div><div class="msg" id="m">Chọn hướng sút để bắt đầu!</div><div id="field" style="position:relative;overflow:hidden;border-radius:16px;background:linear-gradient(#B9E7FF 0 45%,#76C66A 45% 100%);padding:12px 10px 18px;margin:8px 0"><div style="text-align:center;color:#fff;font-weight:800;text-shadow:0 1px 3px #555;margin:0 0 8px">🥅 KHUNG THÀNH</div><div id="gz" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;max-width:390px;margin:auto"></div><div id="keeper" style="position:absolute;left:50%;top:49%;transform:translate(-50%,-50%);font-size:32px;pointer-events:none;filter:drop-shadow(0 2px 1px #333);transition:all .25s">🧤</div><div id="ball" style="position:absolute;left:50%;bottom:12px;transform:translate(-50%,0);font-size:28px;transition:all .42s cubic-bezier(.2,.8,.3,1);pointer-events:none">⚽</div></div><div class="msg" id="sb"></div><div class="mut" style="text-align:center;margin-top:4px" id="hl"></div><button class="b" id="rs" style="width:100%;margin-top:8px">Trận mới</button><div class="mut" style="text-align:center;margin-top:6px">5 lượt mỗi bên · Nếu hòa sau 5 lượt, đá luân lưu tiếp</div>');
-var Z=['↖ Góc trái trên','⬆ Chính giữa trên','↗ Góc phải trên','↙ Góc trái dưới','⬇ Chính giữa dưới','↘ Góc phải dưới'];
-function total(a){return a}
+var LV={D:{name:'Dễ',smart:.22},V:{name:'Bình thường',smart:.48},K:{name:'Khó',smart:.72}};
+var lv='V',you=0,cpu=0,round=0,phase='shoot',done=false,busy=false,aim=0,aimTimer=null,chargeTimer=null,charging=false,chargeStart=0,power=0;
+var Z=['Góc trái cao','Giữa cao','Góc phải cao','Góc trái thấp','Giữa thấp','Góc phải thấp'];
+var clean=function(){if(aimTimer)clearInterval(aimTimer);if(chargeTimer)clearInterval(chargeTimer);aimTimer=null;chargeTimer=null;charging=false};
+frame('','<div class="lvs" id="plv"><button data-lv="D">Dễ</button><button data-lv="V" class="on">Bình thường</button><button data-lv="K">Khó</button></div>'+
+'<div id="pscore" style="display:flex;align-items:center;justify-content:space-between;background:#142b3b;color:#fff;border-radius:14px;padding:12px 14px;margin:8px 0"><div style="text-align:center"><div style="font-size:11px;opacity:.8">BẠN</div><b id="py" style="font-size:28px">0</b></div><div style="text-align:center"><b style="font-size:15px">⚽ PENALTY</b><div id="pround" style="font-size:12px;opacity:.8;margin-top:3px">Lượt 1 / 5</div></div><div style="text-align:center"><div style="font-size:11px;opacity:.8">MÁY</div><b id="pc" style="font-size:28px">0</b></div></div>'+
+'<div class="msg" id="m">Giữ rồi thả để sút đúng thời điểm!</div>'+
+'<div id="pfield" style="position:relative;overflow:hidden;border-radius:15px;padding:14px 10px 18px;background:linear-gradient(#153a54 0 24%,#4f9b65 24% 100%);border:2px solid #dce8ed;box-shadow:inset 0 0 0 2px #ffffff22">'+
+'<div style="position:absolute;inset:0 0 auto;height:24%;background:repeating-linear-gradient(90deg,#ffffff10 0 3px,transparent 3px 22px)"></div>'+
+'<div style="text-align:center;color:#fff;font-size:12px;letter-spacing:2px;font-weight:800;text-shadow:0 1px 3px #000;margin-bottom:8px">🥅 KHUNG THÀNH</div>'+
+'<div id="pgoal" style="position:relative;max-width:390px;margin:auto;padding:5px;border:5px solid #fff;border-bottom-width:8px;border-radius:7px 7px 2px 2px;background:repeating-linear-gradient(0deg,#ffffff1c 0 2px,transparent 2px 16px),repeating-linear-gradient(90deg,#ffffff1c 0 2px,transparent 2px 16px);box-shadow:0 3px 0 #b9cbd1">'+
+'<div id="gz" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,62px);gap:4px"></div>'+
+'<div id="keeper" style="position:absolute;left:50%;top:53%;transform:translate(-50%,-50%);font-size:34px;pointer-events:none;filter:drop-shadow(0 3px 2px #123);transition:left .22s,top .22s;z-index:3">🧤</div></div>'+
+'<div style="height:50px;position:relative;margin-top:7px"><div id="ball" style="position:absolute;left:50%;bottom:2px;transform:translateX(-50%);font-size:27px;filter:drop-shadow(0 3px 2px #234);transition:left .38s,top .38s,bottom .38s,transform .38s;z-index:4">⚽</div></div>'+
+'<div style="height:6px;border-radius:9px;background:#ffffff66;overflow:hidden;margin:4px auto 0;max-width:390px"><div id="pbar" style="height:100%;width:10%;background:linear-gradient(90deg,#a7f3d0,#facc15,#fb7185);border-radius:9px;transition:width .06s"></div></div><div id="phelp" style="text-align:center;color:#fff;font-size:11px;margin-top:5px">Giữ ở khung thành rồi thả để sút</div></div>'+
+'<div class="msg" id="hl" style="font-size:13px;font-weight:normal;color:#6B7280"></div>'+
+'<button class="b" id="rs" style="width:100%;margin-top:8px">🔄 Trận mới</button>'+
+'<div style="font-size:12px;color:#6B7280;text-align:center;margin-top:8px">5 lượt mỗi bên · Nếu hòa, tiếp tục luân lưu đột tử</div>');
+var gz=document.getElementById('gz'),goal=document.getElementById('pgoal'),field=document.getElementById('pfield');
 function msg(t){var e=document.getElementById('m');if(e)e.textContent=t}
+function score(){document.getElementById('py').textContent=you;document.getElementById('pc').textContent=cpu;document.getElementById('pround').textContent=round<5?'Lượt '+(round+1)+' / 5':'Luân lưu đột tử · lượt '+(round-4);document.getElementById('sc').textContent=LV[lv].name}
 function render(){
- var sb=document.getElementById('sb'),hl=document.getElementById('hl'),gz=document.getElementById('gz');
- if(!sb||!gz)return;
- sb.innerHTML='<b style="font-size:20px">Bạn '+you+' – '+cpu+' Máy</b> · Lượt '+Math.min(round+1,5)+(round>=5?' · Luân lưu':'');
- hl.textContent=phase==='shoot'?'Bạn đang sút · Chọn một trong 6 vùng khung thành':phase==='save'?'Máy sút · Chọn hướng bay người để cản':'';
- gz.innerHTML='';
- Z.forEach(function(z,i){
-  var b=document.createElement('button');b.type='button';b.textContent=z;
-  b.style.cssText='min-height:64px;border:2px solid rgba(255,255,255,.9);border-radius:9px;background:rgba(255,255,255,.88);color:#17452D;font-weight:700;font-size:12px;padding:5px 2px;box-shadow:0 2px 4px #285a3c55';
-  b.disabled=done||busy;
-  b.onclick=function(){choose(i)};
-  gz.appendChild(b);
- });
- document.getElementById('sc').textContent='Độ khó: '+LV[lv].name;
+ if(!gz)return;gz.innerHTML='';
+ Z.forEach(function(z,i){var b=document.createElement('button');b.type='button';b.dataset.z=i;b.textContent=z;b.style.cssText='position:relative;z-index:2;min-width:0;border:1px solid #ffffff9c;border-radius:5px;background:#ffffffc9;color:#17384a;font-size:10px;font-weight:800;padding:4px 1px;box-shadow:inset 0 0 0 1px #d4e4eb55;transition:background .1s,transform .1s';b.disabled=done||busy;
+ b.onpointerdown=function(e){if(phase!=='shoot'||done||busy)return;e.preventDefault();startCharge()};
+ b.onclick=function(){if(phase==='save'&&!done&&!busy)saveAt(i)};
+ gz.appendChild(b)});
+ score();paintAim();
+ document.getElementById('phelp').textContent=phase==='shoot'?'Giữ chuột / chạm rồi thả để sút':'Máy sút! Chạm vùng khung thành để đổ người';
+ document.getElementById('hl').textContent=phase==='shoot'?'Canh dấu sáng và nhả đúng lúc. Giữ quá lâu dễ sút vọt xà.':'Đọc hướng bóng và chạm vùng bạn muốn cản phá.';
 }
-function init(){you=0;cpu=0;round=0;phase='shoot';done=false;busy=false;lastDive=-1;lastShot=-1;var k=document.getElementById('keeper');if(k)k.textContent='🧤';var b=document.getElementById('ball');if(b)b.style.cssText='position:absolute;left:50%;bottom:12px;transform:translate(-50%,0);font-size:28px;transition:all .42s cubic-bezier(.2,.8,.3,1);pointer-events:none';msg('Bạn sút trước! Chọn một vùng khung thành.');render()}
-function moveBall(z){
- var ball=document.getElementById('ball'),gz=document.getElementById('gz'),target=gz&&gz.children[z],field=document.getElementById('field');
- if(!ball||!target||!field)return;
- var fr=field.getBoundingClientRect(),tr=target.getBoundingClientRect();
- ball.style.left=(tr.left+tr.width/2-fr.left)+'px';
- ball.style.top=(tr.top+tr.height/2-fr.top)+'px';
- ball.style.bottom='auto';ball.style.transform='translate(-50%,-50%) scale(.72)';
+function paintAim(){if(!gz)return;Array.prototype.forEach.call(gz.children,function(b,i){b.style.background=i===aim&&phase==='shoot'&&!busy?'#fef08a':'#ffffffc9';b.style.transform=i===aim&&phase==='shoot'&&!busy?'scale(.97)':'scale(1)';b.style.boxShadow=i===aim&&phase==='shoot'&&!busy?'0 0 0 2px #facc15,inset 0 0 0 1px #fff':'inset 0 0 0 1px #d4e4eb55'})}
+function init(){
+ clean();you=0;cpu=0;round=0;phase='shoot';done=false;busy=false;aim=0;power=0;
+ var k=document.getElementById('keeper'),b=document.getElementById('ball');if(k){k.textContent='🧤';k.style.left='50%';k.style.top='53%'}if(b){b.style.left='50%';b.style.top='auto';b.style.bottom='2px';b.style.transform='translateX(-50%)'}
+ msg('Bạn sút trước! Giữ rồi thả để đá.');render();
+ aimTimer=setInterval(function(){if(!done&&!busy&&phase==='shoot'){aim=(aim+1)%6;paintAim()}},430);
 }
-function nextRound(){
- if(done)return;
- round++;
- if(round>=5&&you!==cpu){end();return}
- if(round>=10){end();return}
- phase='shoot';busy=false;msg(round>=5?'Hòa sau 5 lượt! Bắt đầu luân lưu quyết định.':'Lượt '+(round+1)+': đến lượt bạn sút!');render();
+function startCharge(){
+ if(charging||done||busy||phase!=='shoot')return;charging=true;chargeStart=Date.now();power=0;
+ chargeTimer=setInterval(function(){power=Math.min(100,(Date.now()-chargeStart)/18);var bar=document.getElementById('pbar');if(bar)bar.style.width=power+'%'},30);
+ document.addEventListener('pointerup',releaseShot,{once:true});
 }
-function end(){
- done=true;busy=false;
- if(you>cpu){msg('BẠN THẮNG '+you+'–'+cpu+'! 🏆⚽');best('pen',best('pen')+1)}
- else if(you<cpu)msg('Máy thắng '+cpu+'–'+you+'. Phục thù ván sau nhé!');
- else msg('Hòa '+you+'–'+cpu+'! Hai bên ngang tài ngang sức.');
- render();
+function releaseShot(){
+ if(!charging)return;charging=false;if(chargeTimer)clearInterval(chargeTimer);chargeTimer=null;
+ if(done||busy||phase!=='shoot')return;
+ var duration=Date.now()-chargeStart,z=aim,tooHigh=duration>1900;busy=true;power=Math.min(100,duration/18);
+ var bar=document.getElementById('pbar');if(bar)bar.style.width=Math.min(100,power)+'%';
+ msg(tooHigh?'Sút quá lực! Bóng bay vọt xà…':'Bạn sút '+Z[z].toLowerCase()+'…');
+ var k=document.getElementById('keeper'),ball=document.getElementById('ball');
+ if(ball){ball.style.left=([17,50,83,17,50,83][z])+'%';ball.style.top=(z<3?'35%':'53%');ball.style.bottom='auto';ball.style.transform='translate(-50%,-50%) scale(.72) rotate(220deg)'}
+ var keeperZone=Math.floor(Math.random()*6);
+ if(Math.random()<LV[lv].smart)keeperZone=z;
+ setTimeout(function(){
+  if(done)return;
+  if(k){k.style.left=([17,50,83,17,50,83][keeperZone])+'%';k.style.top=(keeperZone<3?'32%':'66%');k.textContent='🧤'}
+  var goalMade=!tooHigh&&keeperZone!==z;
+  if(goalMade){you++;msg('VÀOOOO! ⚽🔥');}else if(tooHigh){msg('Bóng vọt xà! Canh lực nhẹ hơn nhé.')}else msg('THỦ MÔN CẢN ĐƯỢC! 🧤');
+  score();phase='save';busy=false;
+  setTimeout(function(){if(!done&&phase==='save')msg('Đến lượt máy sút. Chạm hướng bạn muốn đổ người!')},500);
+  render();
+  if(ball){ball.style.left='50%';ball.style.top='auto';ball.style.bottom='2px';ball.style.transform='translateX(-50%)'}
+ },420);
 }
-function choose(z){
- if(done||busy)return;busy=true;lastDive=z;
- var keeper=document.getElementById('keeper');
- if(phase==='shoot'){
-  msg('Bạn sút '+Z[z].toLowerCase()+'…');
-  moveBall(z);
-  var blocks=[],n=LV[lv].keeper;
-  while(blocks.length<n){var q=Math.floor(Math.random()*6);if(blocks.indexOf(q)<0)blocks.push(q)}
-  setTimeout(function(){
-   if(done)return;
-   if(keeper){keeper.style.left=(16+(blocks[0]%3)*34)+'%';keeper.style.top=(blocks[0]<3?'43%':'68%');keeper.textContent='🧤'}
-   if(blocks.indexOf(z)>=0){msg('THỦ MÔN CẢN ĐƯỢC! 🧤 Khó tìm được góc trống rồi.');}
-   else{you++;msg('VÀOOOO! ⚽🔥');}
-   phase='save';busy=false;render();
-   var ball=document.getElementById('ball');if(ball){ball.style.left='50%';ball.style.top='auto';ball.style.bottom='12px';ball.style.transform='translate(-50%,0)'}
-   setTimeout(function(){if(!done&&phase==='save')msg('Máy chuẩn bị sút! Chọn hướng bay người để cản.');},650);
-  },430);
- }else{
-  msg('Bạn đổ người sang '+Z[z].toLowerCase()+'…');
-  var cpuZone=Math.floor(Math.random()*6);
-  if(Math.random()<LV[lv].smart){var opts=[0,1,2,3,4,5].filter(function(q){return q!==z});cpuZone=opts[Math.floor(Math.random()*opts.length)]}
-  moveBall(cpuZone);
-  setTimeout(function(){
-   if(done)return;
-   if(keeper){keeper.style.left=(16+(z%3)*34)+'%';keeper.style.top=(z<3?'43%':'68%');keeper.textContent='🧤'}
-   if(cpuZone===z){msg('CẢN PHÁ XUẤT SẮC! 🧤 Bạn đọc đúng hướng sút!');}
-   else{cpu++;msg('Máy ghi bàn. ⚽ Đừng để mất tinh thần!');}
-   phase='between';render();
-   var ball=document.getElementById('ball');if(ball){ball.style.left='50%';ball.style.top='auto';ball.style.bottom='12px';ball.style.transform='translate(-50%,0)'}
-   setTimeout(nextRound,1050);
-  },430);
- }
+function saveAt(z){
+ if(done||busy||phase!=='save')return;busy=true;
+ var cpuZone=Math.floor(Math.random()*6);
+ if(Math.random()<LV[lv].smart)cpuZone=(z+1+Math.floor(Math.random()*5))%6;
+ var k=document.getElementById('keeper'),ball=document.getElementById('ball');
+ msg('Bạn đổ người sang '+Z[z].toLowerCase()+'…');
+ if(ball){ball.style.left=([17,50,83,17,50,83][cpuZone])+'%';ball.style.top=(cpuZone<3?'35%':'53%');ball.style.bottom='auto';ball.style.transform='translate(-50%,-50%) scale(.72) rotate(220deg)'}
+ setTimeout(function(){
+  if(done)return;
+  if(k){k.style.left=([17,50,83,17,50,83][z])+'%';k.style.top=(z<3?'32%':'66%')}
+  if(cpuZone===z){msg('CẢN PHÁ XUẤT SẮC! 🧤');}else{cpu++;msg('Máy ghi bàn. Tập trung lượt tiếp theo! ⚽')}
+  score();if(ball){ball.style.left='50%';ball.style.top='auto';ball.style.bottom='2px';ball.style.transform='translateX(-50%)'}
+  round++;busy=false;
+  if(round>=5&&you!==cpu){finish();return}
+  if(round>=5&&you===cpu){phase='shoot';msg('Hòa sau 5 lượt! Bắt đầu luân lưu đột tử.');}
+  else phase='shoot';
+  if(round>=5&&you!==cpu){finish();return}
+  render();
+ },420);
 }
+function finish(){done=true;busy=false;clean();if(you>cpu){msg('BẠN THẮNG '+you+'–'+cpu+'! 🏆');best('pen',best('pen')+1)}else if(you<cpu)msg('Máy thắng '+cpu+'–'+you+'. Phục thù ván sau nhé!');else{msg('Vẫn hòa '+you+'–'+cpu+'! Đá thêm một cặp quyết định.');round=4;phase='shoot';done=false;render();return}render()}
 document.querySelectorAll('#plv button').forEach(function(b){b.onclick=function(){lv=b.dataset.lv;document.querySelectorAll('#plv button').forEach(function(o){o.className=o===b?'on':''});init()}});
-document.getElementById('rs').onclick=init;init();
+document.getElementById('rs').onclick=init;
+stop=function(){clean()};
+document.addEventListener('pointercancel',releaseShot);
+init();
 };
+
 menu();
 </script><script src="pet.js"></script></body></html>
