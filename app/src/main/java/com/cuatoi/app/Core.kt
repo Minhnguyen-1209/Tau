@@ -85,6 +85,8 @@ object T {
 
     fun dom(ms: Long): String = cal(ms).get(Calendar.DAY_OF_MONTH).toString()
 
+    fun month(ms: Long): String = (cal(ms).get(Calendar.MONTH) + 1).toString()
+
     fun fmt(ms: Long): String {
         val m = ms / 60000
         return if (m >= 60) "${m / 60}h ${m % 60}p" else if (m == 0L && ms >= 1000) "<1p" else "${m}p"
@@ -176,6 +178,44 @@ object Store {
         val old = p(c).getString("svc_log", "") ?: ""
         val lines = (old.split("\n").filter { it.isNotEmpty() } + (T.hms(System.currentTimeMillis()) + " " + msg)).takeLast(6)
         p(c).edit().putString("svc_log", lines.joinToString("\n")).apply()
+    }
+
+    /** Lưu chi tiết từng khung 30 phút của một ngày, giữ 3 tuần. */
+    fun saveSlots(c: Context, key: String, sl: Array<HashMap<String, Long>>) {
+        val o = JSONObject()
+        for (i in 0 until 48) {
+            if (sl[i].isEmpty()) continue
+            val a = JSONObject()
+            for ((k, v) in sl[i]) a.put(k, v)
+            o.put(i.toString(), a)
+        }
+        p(c).edit().putString("slot_$key", o.toString()).apply()
+    }
+
+    fun loadSlots(c: Context, key: String): Array<HashMap<String, Long>> {
+        val out = Array(48) { HashMap<String, Long>() }
+        val s = p(c).getString("slot_$key", null) ?: return out
+        try {
+            val o = JSONObject(s)
+            val it = o.keys()
+            while (it.hasNext()) {
+                val k = it.next()
+                val a = o.getJSONObject(k)
+                val ak = a.keys()
+                while (ak.hasNext()) {
+                    val pk = ak.next()
+                    out[k.toInt()][pk] = a.getLong(pk)
+                }
+            }
+        } catch (e: Exception) {
+        }
+        return out
+    }
+
+    fun pruneSlots(c: Context, olderThanKey: String) {
+        val e = p(c).edit()
+        for (k in p(c).all.keys) if (k.startsWith("slot_") && k.substring(5) < olderThanKey) e.remove(k)
+        e.apply()
     }
 
     fun saveDay(c: Context, key: String, m: Map<String, Long>) {
@@ -327,11 +367,28 @@ object Usage {
         for (i in 0 until days) {
             val ds = T.addDays(t0, -i)
             val to = Math.min(T.addDays(ds, 1), now)
-            val m = totals(sessions(c, ds, to), ds, to, ok)
+            val ss = sessions(c, ds, to)
+            val m = totals(ss, ds, to, ok)
             if (m.isEmpty()) continue
             val saved = Store.loadDay(c, T.key(ds))
-            if (m.values.sum() >= saved.values.sum()) Store.saveDay(c, T.key(ds), m)
+            if (m.values.sum() >= saved.values.sum()) {
+                Store.saveDay(c, T.key(ds), m)
+                Store.saveSlots(c, T.key(ds), slots(ss, ds, ok))
+            }
         }
+        Store.pruneSlots(c, T.key(T.addDays(t0, -21)))
+    }
+
+    /** Các app có biểu tượng trên màn hình (trừ Tau và màn hình chính). */
+    fun launcherSet(c: Context): Set<String> {
+        val pm = c.packageManager
+        val home = pm.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)?.activityInfo?.packageName
+        val out = HashSet<String>()
+        for (ri in pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)) {
+            val p = ri.activityInfo.packageName
+            if (p != c.packageName && p != home) out.add(p)
+        }
+        return out
     }
 
     fun dayTotal(c: Context, ds: Long): Long = Store.loadDay(c, T.key(ds)).values.sum()
@@ -379,7 +436,8 @@ object Health {
         Hr(0, "Uống nước", "Uống một ly nước nhé.", false, 90, 7 * 60, 22 * 60),
         Hr(1, "Nghỉ mắt", "Nhìn xa 20 giây và chớp mắt vài lần.", false, 40, 8 * 60, 22 * 60),
         Hr(2, "Đứng dậy vận động", "Đứng dậy, đi lại và vươn vai.", false, 60, 8 * 60, 21 * 60),
-        Hr(3, "Đi ngủ", "Đến giờ chuẩn bị ngủ, cất điện thoại thôi.", false, 1440, 22 * 60 + 30, 22 * 60 + 30)
+        Hr(3, "Đi ngủ", "Đến giờ chuẩn bị ngủ, cất điện thoại thôi.", false, 1440, 22 * 60 + 30, 22 * 60 + 30),
+        Hr(4, "Chấm điểm cảm xúc", "Hôm nay bạn thấy thế nào? Mở Tau, mục Bản thân, chạm một khuôn mặt là xong.", true, 1440, 21 * 60 + 30, 21 * 60 + 30)
     )
 
     fun load(c: Context): List<Hr> {

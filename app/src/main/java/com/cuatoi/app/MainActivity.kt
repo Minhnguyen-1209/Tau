@@ -7,7 +7,14 @@ import android.app.AlertDialog
 import android.app.TimePickerDialog
 import android.content.ComponentName
 import android.content.Context
+import android.app.ActivityManager
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.Environment
+import android.os.StatFs
+import android.view.WindowManager
+import org.json.JSONArray
+import org.json.JSONObject
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.graphics.Canvas
@@ -110,6 +117,8 @@ class MainActivity : Activity() {
     private lateinit var lHealth: LinearLayout
     private lateinit var web: WebView
     private lateinit var gameWeb: WebView
+    private lateinit var wellWeb: WebView
+    private var selDay = 0L
     private lateinit var navItems: Array<TextView>
     private var tab = 0
     private var timeMode = 0
@@ -128,6 +137,104 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun syncReminders(json: String) {
             Reminders.sync(applicationContext, json)
+        }
+    }
+
+    /* ---------- Cầu nối cho tab Bản thân ---------- */
+    inner class Bridge2 {
+        @JavascriptInterface
+        fun weekJson(): String {
+            val c = applicationContext
+            val now = System.currentTimeMillis()
+            val t0 = T.dayStart(now)
+            try {
+                Usage.syncDays(c, Usage.launcherSet(c), 8)
+            } catch (e: Exception) {
+            }
+            val ent = Ent.set(c)
+            val days = JSONArray()
+            for (i in 0 until 21) {
+                val ds = T.addDays(t0, -i)
+                val m = Store.loadDay(c, T.key(ds))
+                var t = 0L
+                var e = 0L
+                for ((k, v) in m) {
+                    t += v
+                    if (ent.contains(k)) e += v
+                }
+                val best = m.entries.maxByOrNull { it.value }
+                days.put(
+                    JSONObject().put("k", T.key(ds)).put("t", t).put("e", e)
+                        .put("a", if (best == null) "" else (appMap[best.key]?.label ?: best.key))
+                )
+            }
+            val top = JSONArray()
+            for (en in Usage.range(c, T.addDays(t0, -6), 7).entries.sortedByDescending { it.value }.take(6)) {
+                top.put(JSONArray().put(appMap[en.key]?.label ?: en.key).put(en.value))
+            }
+            return JSONObject().put("days", days).put("top", top).toString()
+        }
+
+        @JavascriptInterface
+        fun deviceJson(): String {
+            val c = applicationContext
+            val o = JSONObject()
+            val bi = c.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val lv = bi?.getIntExtra("level", -1) ?: -1
+            val sc = bi?.getIntExtra("scale", 100) ?: 100
+            o.put("bp", if (lv >= 0 && sc > 0) lv * 100 / sc else 0)
+            o.put("ch", (bi?.getIntExtra("plugged", 0) ?: 0) != 0)
+            o.put("bt", (bi?.getIntExtra("temperature", 0) ?: 0) / 10.0)
+            o.put(
+                "bh",
+                when (bi?.getIntExtra("health", 0) ?: 0) {
+                    2 -> "tốt"
+                    3 -> "quá nóng"
+                    4 -> "hỏng"
+                    5 -> "quá áp"
+                    7 -> "quá lạnh"
+                    else -> "không rõ"
+                }
+            )
+            val sf = StatFs(Environment.getDataDirectory().path)
+            o.put("st", sf.totalBytes).put("sf", sf.availableBytes)
+            val mi = ActivityManager.MemoryInfo()
+            (c.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mi)
+            o.put("rt", mi.totalMem).put("ra", mi.availMem)
+            o.put("ac", apps.size)
+            val un = JSONArray()
+            val t0 = T.dayStart(System.currentTimeMillis())
+            if (Usage.hasAccess(c) && Usage.daysWithData(c, T.addDays(t0, -20), 21) >= 7) {
+                val used = Usage.range(c, T.addDays(t0, -20), 21).keys
+                for (a in apps) if (!used.contains(a.pkg) && un.length() < 6) un.put(a.label)
+            }
+            o.put("un", un)
+            return o.toString()
+        }
+
+        @JavascriptInterface
+        fun openSetting(n: String) {
+            runOnUiThread {
+                openFirst(
+                    listOf(
+                        Intent(
+                            when (n) {
+                                "storage" -> Settings.ACTION_INTERNAL_STORAGE_SETTINGS
+                                "battery" -> Settings.ACTION_BATTERY_SAVER_SETTINGS
+                                else -> Settings.ACTION_APPLICATION_SETTINGS
+                            }
+                        )
+                    )
+                )
+            }
+        }
+
+        @JavascriptInterface
+        fun getFlag(k: String): Boolean = k == "charge_alert" && Store.p(applicationContext).getBoolean(k, true)
+
+        @JavascriptInterface
+        fun setFlag(k: String, v: Boolean) {
+            if (k == "charge_alert") Store.p(applicationContext).edit().putBoolean(k, v).apply()
         }
     }
 
@@ -229,6 +336,19 @@ class MainActivity : Activity() {
         return w
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun makeWell(): WebView {
+        val w = WebView(this)
+        w.settings.javaScriptEnabled = true
+        w.settings.domStorageEnabled = true
+        w.addJavascriptInterface(Bridge2(), "TauApp")
+        w.webViewClient = WebViewClient()
+        w.setBackgroundColor(Color.TRANSPARENT)
+        val html = assets.open("wellbeing.html").bufferedReader().use { it.readText() }
+        w.loadDataWithBaseURL("https://tau.app/well/", html, "text/html", "utf-8", null)
+        return w
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Store.logSvc(this, "mở Tau (pid ${Process.myPid()})")
@@ -261,15 +381,17 @@ class MainActivity : Activity() {
         content.addView(web, FrameLayout.LayoutParams(-1, -1))
         gameWeb = makeGames()
         content.addView(gameWeb, FrameLayout.LayoutParams(-1, -1))
+        wellWeb = makeWell()
+        content.addView(wellWeb, FrameLayout.LayoutParams(-1, -1))
 
         val nav = LinearLayout(this)
         nav.setBackgroundColor(Color.WHITE)
-        val names = arrayOf("Thời gian", "Tập trung", "Sức khoẻ", "Tiện ích", "Trò chơi")
-        navItems = Array(5) { i ->
+        val names = arrayOf("Thời gian", "Tập trung", "Sức khoẻ", "Tiện ích", "Trò chơi", "Bản thân")
+        navItems = Array(6) { i ->
             val t = TextView(this)
             t.text = names[i]
             t.gravity = Gravity.CENTER
-            t.textSize = 12f
+            t.textSize = 11f
             t.setPadding(0, dp(14), 0, dp(14))
             t.setOnClickListener { showTab(i) }
             nav.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
@@ -314,7 +436,7 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (tab == 3 && web.canGoBack()) web.goBack() else if (tab == 4) showTab(0) else super.onBackPressed()
+        if (tab == 3 && web.canGoBack()) web.goBack() else if (tab >= 4) showTab(0) else super.onBackPressed()
     }
 
     private fun showTab(i: Int) {
@@ -324,7 +446,9 @@ class MainActivity : Activity() {
         sHealth.visibility = if (i == 2) View.VISIBLE else View.GONE
         web.visibility = if (i == 3) View.VISIBLE else View.GONE
         gameWeb.visibility = if (i == 4) View.VISIBLE else View.GONE
-        for (k in 0 until 5) {
+        wellWeb.visibility = if (i == 5) View.VISIBLE else View.GONE
+        if (i == 5) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        for (k in 0 until 6) {
             navItems[k].setTextColor(if (k == i) deep else mut)
             navItems[k].typeface = if (k == i) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
@@ -430,11 +554,13 @@ class MainActivity : Activity() {
             return
         }
         val row = LinearLayout(this)
-        val names = arrayOf("Hôm nay", "7 ngày", "30 ngày")
-        for (i in 0..2) {
+        val names = arrayOf("Hôm nay", "7 ngày", "30 ngày", if (timeMode == 3) T.dow(selDay) + " " + T.dom(selDay) else "Ngày khác")
+        for (i in 0..3) {
             val b = seg(names[i], timeMode == i) {
-                timeMode = i
-                buildTime()
+                if (i == 3) pickDay() else {
+                    timeMode = i
+                    buildTime()
+                }
             }
             val lp = LinearLayout.LayoutParams(0, -2, 1f)
             lp.rightMargin = dp(6)
@@ -455,37 +581,59 @@ class MainActivity : Activity() {
             val t0 = T.dayStart(now)
             var sess: List<Session> = emptyList()
             var ent: Set<String> = emptySet()
+            var dTot: Map<String, Long> = emptyMap()
+            var dSl: Array<HashMap<String, Long>> = Array(48) { HashMap<String, Long>() }
+            val ds = selDay
             try {
                 Usage.syncDays(this, ok, 8)
                 ent = Ent.set(this)
                 if (mode == 0) sess = Usage.sessions(this, t0, now)
+                if (mode == 3) {
+                    dTot = Store.loadDay(this, T.key(ds))
+                    dSl = Store.loadSlots(this, T.key(ds))
+                    if (dTot.isEmpty()) {
+                        val ss = Usage.sessions(this, ds, T.addDays(ds, 1))
+                        dTot = Usage.totals(ss, ds, T.addDays(ds, 1), ok)
+                        dSl = Usage.slots(ss, ds, ok)
+                    }
+                }
             } catch (e: Exception) {
                 Store.setErr(this, e.toString())
             }
             val entF = ent
+            val dTotF = dTot
+            val dSlF = dSl
             runOnUiThread {
                 if (g == gen && tab == 0) {
                     ll.removeView(loading)
-                    if (mode == 0) renderToday(ll, sess, ok, entF, t0, now) else renderRange(ll, if (mode == 1) 7 else 30, t0, entF)
+                    when (mode) {
+                        0 -> renderToday(ll, sess, ok, entF, t0, now)
+                        3 -> renderDayView(ll, dTotF, dSlF, entF, ds, now, false)
+                        else -> renderRange(ll, if (mode == 1) 7 else 30, t0, entF)
+                    }
                 }
             }
         }.start()
     }
 
     private fun renderToday(ll: LinearLayout, sess: List<Session>, ok: Set<String>, ent: Set<String>, t0: Long, now: Long) {
-        val tot = Usage.totals(sess, t0, now, ok)
+        renderDayView(ll, Usage.totals(sess, t0, now, ok), Usage.slots(sess, t0, ok), ent, t0, now, true)
+    }
+
+    /** Màn hình một ngày: hôm nay hoặc một ngày đã lưu trong 3 tuần. */
+    private fun renderDayView(ll: LinearLayout, tot: Map<String, Long>, slots: Array<HashMap<String, Long>>, ent: Set<String>, t0: Long, now: Long, today: Boolean) {
         val sum = tot.values.sum()
         val c1 = card()
-        c1.addView(tv("Hôm nay", 13f, false, mut))
+        c1.addView(tv(if (today) "Hôm nay" else "${T.dow(t0)} ${T.dom(t0)}/${T.month(t0)}", 13f, false, mut))
         c1.addView(tv(T.fmt(sum), 32f, true))
         val yt = Usage.dayTotal(this, T.addDays(t0, -1))
         if (yt > 0) c1.addView(tv("Hôm qua cả ngày: ${T.fmt(yt)}", 13f, false, mut))
-        try {
+        if (today) try {
             c1.addView(tv("Số lần bật màn hình: ${Usage.screenOns(this, t0, now)}", 13f, false, mut))
         } catch (e: Exception) {
         }
         val goal = Store.goalMin(this)
-        if (goal > 0) {
+        if (goal > 0 && today) {
             var streak = 0
             for (i in 1..60) {
                 val tt = Usage.dayTotal(this, T.addDays(t0, -i))
@@ -503,10 +651,10 @@ class MainActivity : Activity() {
         }
         ll.addView(c1)
 
-        entCard(ll, tot, ent, 1, Store.loadDay(this, T.key(T.addDays(t0, -1))), 1)
+        entCard(ll, tot, ent, 1, if (today) Store.loadDay(this, T.key(T.addDays(t0, -1))) else null, if (today) 1 else 0)
 
-        val slots = Usage.slots(sess, t0, ok)
-        val cur = ((now - t0) / 1800000L).toInt()
+        val cur = if (today) ((now - t0) / 1800000L).toInt() else -1
+        adviceCard(ll, sum, tot, ent, slots, 1, if (today) Usage.dayTotal(this, T.addDays(t0, -1)) else 0L)
 
         val hc = card()
         hc.addView(tv("Theo khung 30 phút (phút)", 14f, true))
@@ -532,12 +680,82 @@ class MainActivity : Activity() {
         val ac = card()
         ac.addView(tv("Theo app (chạm để đặt giới hạn)", 14f, true))
         val top = tot.entries.sortedByDescending { it.value }.take(25)
-        if (top.isEmpty()) ac.addView(tv("Chưa có số liệu hôm nay.", 13f, false, mut))
+        if (top.isEmpty()) ac.addView(tv(if (today) "Chưa có số liệu hôm nay." else "Chưa có số liệu ngày này. Tau chỉ lưu 3 tuần gần nhất và chỉ từ lúc bạn cài.", 13f, false, mut))
         for (e in top) {
             val a = appMap[e.key] ?: continue
-            ac.addView(appRow(a, "Hôm nay: ${T.fmt(e.value)}", false))
+            ac.addView(appRow(a, T.fmt(e.value), false))
         }
         ll.addView(ac)
+    }
+
+    private fun pickDay() {
+        val t0 = T.dayStart(System.currentTimeMillis())
+        val labels = Array(21) { i ->
+            val ds = T.addDays(t0, -i)
+            (if (i == 0) "Hôm nay" else if (i == 1) "Hôm qua" else "${T.dow(ds)} ${T.dom(ds)}/${T.month(ds)}") +
+                " · " + (Usage.dayTotal(this, ds).let { if (it > 0) T.fmt(it) else "chưa có số liệu" })
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Xem lại 3 tuần gần nhất")
+            .setItems(labels) { _, i ->
+                if (i == 0) {
+                    timeMode = 0
+                } else {
+                    selDay = T.addDays(t0, -i)
+                    timeMode = 3
+                }
+                buildTime()
+            }
+            .show()
+    }
+
+    /** Thẻ lời khuyên về thời gian dùng, dựa trên số liệu của khoảng đang xem. */
+    private fun adviceCard(ll: LinearLayout, sum: Long, tot: Map<String, Long>, ent: Set<String>, slots: Array<HashMap<String, Long>>?, days: Int, prevPerDay: Long) {
+        if (sum <= 0L) return
+        val tips = ArrayList<Pair<Int, String>>() // 0 trung tính, 1 tốt, 2 cảnh báo
+        val pd = sum / Math.max(days, 1)
+        val h = pd / 3600000.0
+        if (h >= 5) tips.add(Pair(2, "Bình quân ${T.fmt(pd)} mỗi ngày là khá nhiều. Thử mục tiêu giảm 30 phút mỗi tuần (tab Tập trung, thẻ Mục tiêu mỗi ngày)."))
+        else if (h >= 3) tips.add(Pair(0, "Bình quân ${T.fmt(pd)} mỗi ngày. Đặt giới hạn cho app dùng nhiều nhất sẽ giúp bạn giảm dần."))
+        else if (h < 2) tips.add(Pair(1, "Bình quân ${T.fmt(pd)} mỗi ngày, bạn dùng điện thoại khá ít. Rất tốt."))
+        if (h >= 3) tips.add(Pair(0, "Dùng nhiều thì nhớ quy tắc 20-20-20: mỗi 20 phút nhìn xa 20 giây. Bật nhắc Nghỉ mắt ở tab Sức khoẻ."))
+        val top = tot.entries.maxByOrNull { it.value }
+        if (top != null && top.value * 100 / sum >= 40) {
+            val nm = appMap[top.key]?.label ?: top.key
+            tips.add(Pair(2, "$nm chiếm ${top.value * 100 / sum}% thời gian. Đặt giới hạn riêng cho app này, giảm khoảng 10% so với hiện tại."))
+        }
+        val es = tot.filter { ent.contains(it.key) }.values.sum()
+        if (es * 100 / sum >= 40) {
+            tips.add(Pair(2, "Giải trí và trò chơi chiếm ${es * 100 / sum}%." + if (Store.entLimit(this) == 0) " Bạn chưa đặt quỹ giải trí mỗi ngày, hãy đặt ở thẻ Trò chơi & giải trí." else " Quỹ giải trí hiện tại là ${Store.entLimit(this)} phút mỗi ngày."))
+        }
+        if (slots != null) {
+            var night = 0L
+            for (i in 0..9) night += slots[i].values.sum()
+            night += slots[46].values.sum() + slots[47].values.sum()
+            if (night >= 15 * 60000L) tips.add(Pair(2, "Bạn dùng ${T.fmt(night)} trong khoảng 23h đến 5h sáng. Dùng điện thoại đêm khuya làm khó ngủ, hãy bật Giờ đi ngủ ở tab Tập trung."))
+            var bi = -1
+            var bv = 0L
+            for (i in 0 until 48) {
+                val v = slots[i].values.sum()
+                if (v > bv) {
+                    bv = v
+                    bi = i
+                }
+            }
+            if (bi >= 0 && bv >= 10 * 60000L) tips.add(Pair(0, "Khung dùng nhiều nhất là ${T.mm(bi * 30)}–${T.mm(bi * 30 + 30)} (${T.fmt(bv)}). Thử xếp một việc khác vào khung giờ này."))
+        }
+        if (prevPerDay > 0L) {
+            if (pd > prevPerDay * 12 / 10) tips.add(Pair(2, "Cao hơn kỳ so sánh ${(pd - prevPerDay) * 100 / prevPerDay}%. Nhìn lại xem có app nào mới chiếm nhiều thời gian không."))
+            else if (pd < prevPerDay * 8 / 10) tips.add(Pair(1, "Thấp hơn kỳ so sánh ${(prevPerDay - pd) * 100 / prevPerDay}%. Bạn đang đi đúng hướng."))
+        }
+        val c = card()
+        c.addView(tv("Lời khuyên về thời gian dùng", 16f, true))
+        for (t in tips) {
+            val v = tv(t.second, 13f, false, if (t.first == 2) Color.parseColor("#B91C1C") else if (t.first == 1) Color.parseColor("#15803D") else ink)
+            v.setPadding(0, dp(6), 0, dp(2))
+            c.addView(v)
+        }
+        ll.addView(c)
     }
 
     /** Một khung 30 phút. Chạm vào để mở danh sách app đã dùng trong khung đó. */
@@ -679,6 +897,7 @@ class MainActivity : Activity() {
         ll.addView(c1)
 
         entCard(ll, cur, ent, days, prev, havePrev)
+        adviceCard(ll, curSum, cur, ent, null, haveCur, if (havePrev > 0) prevSum / havePrev else 0L)
 
         val cc = card()
         cc.addView(tv("Từng ngày (phút)", 14f, true))

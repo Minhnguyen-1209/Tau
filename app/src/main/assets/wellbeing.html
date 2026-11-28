@@ -1,0 +1,194 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:sans-serif;color:#1F2937;background:transparent}
+#app{padding:12px 16px 28px;max-width:520px;margin:0 auto}
+h1{font-size:24px;margin:8px 0 12px;color:#fff}
+.seg{display:flex;gap:6px;margin-bottom:12px}
+.seg button{flex:1;border:0;border-radius:20px;padding:9px 2px;font-size:13px;background:rgba(255,255,255,.22);color:#fff}
+.seg button.on{background:#fff;color:#C2410C;font-weight:bold}
+.card{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 6px;font-size:16px}
+.mut{color:#6B7280;font-size:12px;line-height:1.45}
+.b{background:#C2410C;color:#fff;border:0;border-radius:10px;padding:10px 14px;font-size:14px;margin:6px 6px 0 0}
+.b.g{background:#E5E7EB;color:#1F2937}
+.sl{margin:10px 0}
+.sl label{display:flex;justify-content:space-between;font-size:14px}
+.sl input{width:100%;accent-color:#C2410C}
+.chk{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chk span{border:1px solid #D1D5DB;border-radius:16px;padding:6px 10px;font-size:13px}
+.chk span.on{background:#FED7AA;border-color:#C2410C}
+textarea{width:100%;border:1px solid #D1D5DB;border-radius:10px;padding:8px;font-size:14px}
+.big{font-size:34px;font-weight:bold}
+.bars{display:flex;align-items:flex-end;gap:3px;height:90px;margin-top:8px}
+.bars div{flex:1;background:#F5A26B;border-radius:3px 3px 0 0;min-height:2px}
+.bars div.hi{background:#C2410C}
+.lab{display:flex;gap:3px;font-size:10px;color:#6B7280}
+.lab span{flex:1;text-align:center}
+.faces{display:flex;justify-content:space-between;margin:10px 0}.faces span{font-size:38px;padding:6px 8px;border-radius:14px}.faces span.on{background:#FED7AA}
+details summary{font-weight:bold;font-size:15px}
+.dia{display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #F3F4F6;font-size:13px}.dia b{min-width:62px}.dia .sc{min-width:36px;text-align:center;font-weight:bold;color:#C2410C}
+.tip{padding:8px 10px;border-radius:10px;background:#FFF4EA;margin:6px 0;font-size:13px;line-height:1.45}
+.tip.w{background:#FEE2E2}
+.tip.ok{background:#DCFCE7}
+.row{display:flex;justify-content:space-between;font-size:14px;padding:4px 0}
+.pb{height:10px;background:#E5E7EB;border-radius:5px;overflow:hidden;margin:4px 0}
+.pb i{display:block;height:100%;background:#F26B1D}
+.rt{border:1px solid #E5E7EB;border-radius:12px;padding:10px;margin:8px 0}
+.rt b{font-size:15px}
+.tm{font-size:64px;font-weight:bold;text-align:center;margin:6px 0}
+.ex{font-size:24px;font-weight:bold;text-align:center}
+</style></head><body><div id="app"></div>
+<script>
+var A=document.getElementById('app'),sub=0,wk=null,dev=null,timer=null;
+function $(i){return document.getElementById(i)}
+function ls(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
+function sv(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function key(d){var y=d.getFullYear(),m=d.getMonth()+1,n=d.getDate();return ''+y+(m<10?'0':'')+m+(n<10?'0':'')+n}
+function dayOff(i){var d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-i);return d}
+function fm(ms){var m=Math.round(ms/60000);return m>=60?Math.floor(m/60)+'h '+(m%60)+'p':m+'p'}
+function avg(a){return a.length?a.reduce(function(s,x){return s+x},0)/a.length:0}
+var WD=['CN','T2','T3','T4','T5','T6','T7'];
+var hasT=typeof TauApp!=='undefined';
+function nat(f){if(!hasT)return null;try{return JSON.parse(TauApp[f]())}catch(e){return null}}
+function tabs(){return '<h1>Bản thân</h1><div class="seg">'+['Cảm xúc','Thể thao','Báo cáo','Chăm máy'].map(function(n,i){return '<button class="'+(i==sub?'on':'')+'" onclick="go('+i+')">'+n+'</button>'}).join('')+'</div>'}
+function go(i){if(timer){clearInterval(timer);timer=null}sub=i;draw()}
+function draw(){A.innerHTML=tabs()+'<div id="v"></div>';[mood,sport,report,care][sub]()}
+
+/* ---------- Cảm xúc ---------- */
+var FAC=[['v','Vui vẻ',false],['e','Năng lượng',false],['z','Căng thẳng (cao là căng)',true],['s','Ngủ ngon đêm qua',false]];
+var CHK=['Uống đủ nước','Có vận động','Nghỉ mắt đủ','Ngủ đủ giấc','Nói chuyện với ai đó'];
+function score(m){return Math.round((m.v+m.e+(100-m.z)+m.s)/4)}
+function lvl(s){return s>=75?'tốt':s>=55?'ổn':s>=40?'hơi thấp':'thấp'}
+function mood(){var all=ls('tau_mood',{}),k=key(new Date()),m=all[k]||{v:60,e:60,z:40,s:60,c:[],n:''};
+var FC=[['😣',15],['😕',35],['😐',55],['🙂',75],['😄',95]],cs=all[k]?score(all[k]):-1;
+var h='<div class="card"><h3>Hôm nay bạn thấy thế nào?</h3><div class="mut">Chạm một khuôn mặt là xong, mất 2 giây.</div><div class="faces" id="fc">'+FC.map(function(f){return '<span data-s="'+f[1]+'" class="'+(cs>=0&&Math.abs(cs-f[1])<=10?'on':'')+'">'+f[0]+'</span>'}).join('')+'</div><div id="ms" class="mut">'+(cs>=0?'Điểm hôm nay: '+cs+'/100 ('+lvl(cs)+')':'')+'</div></div><div class="card"><details><summary>Chấm chi tiết (tuỳ chọn)</summary><div class="mut" style="margin-top:6px">Thang 0 đến 100. Riêng Căng thẳng thì càng cao càng căng.</div>';
+FAC.forEach(function(f){h+='<div class="sl"><label><span>'+f[1]+'</span><b id="o'+f[0]+'">'+m[f[0]]+'</b></label><input type="range" min="0" max="100" value="'+m[f[0]]+'" oninput="$(\'o'+f[0]+'\').textContent=this.value" id="r'+f[0]+'"></div>'});
+h+='<div class="mut">Hôm nay bạn đã làm được:</div><div class="chk" id="ck">'+CHK.map(function(c,i){return '<span class="'+(m.c.indexOf(i)>=0?'on':'')+'" data-i="'+i+'">'+c+'</span>'}).join('')+'</div><textarea id="nt" rows="2" placeholder="Một dòng về hôm nay (tuỳ chọn)">'+(m.n||'')+'</textarea><button class="b" onclick="saveMood()">Lưu chi tiết</button></details></div>';
+h+='<div id="hist"></div><div id="adv"></div><div id="dia"></div>';$('v').innerHTML=h;
+document.querySelectorAll('#fc span').forEach(function(e){e.onclick=function(){quick(+e.dataset.s)}});
+document.querySelectorAll('#ck span').forEach(function(s){s.onclick=function(){s.classList.toggle('on')}});
+renderHist();wk=wk||nat('weekJson');renderAdv();renderDia()}
+function quick(sc){var all=ls('tau_mood',{}),k=key(new Date()),o=all[k]||{c:[],n:''};o.v=sc;o.e=sc;o.s=sc;o.z=100-sc;all[k]=o;sv('tau_mood',all);
+document.querySelectorAll('#fc span').forEach(function(e){e.classList.toggle('on',+e.dataset.s==sc)});$('ms').textContent='Đã lưu. Điểm hôm nay: '+score(o)+'/100 ('+lvl(score(o))+')';renderHist();renderAdv();renderDia()}
+function renderDia(){var all=ls('tau_mood',{}),work=ls('tau_work',{}),h='<div class="card"><h3>Nhật ký 3 tuần</h3><div class="mut">Xem lại mỗi ngày bạn đã làm gì: cảm xúc, thể thao, thời gian dùng điện thoại, app dùng nhiều nhất.</div>';
+for(var i=0;i<21;i++){var d=dayOff(i),k=key(d),m=all[k],wm=work[k]||0,sd=wk&&wk.days?wk.days.filter(function(x){return x.k==k})[0]:null;
+var parts=[];if(wm)parts.push('tập '+wm+'p');if(sd&&sd.t>0)parts.push('máy '+fm(sd.t)+(sd.a?' · '+sd.a:''));if(m&&m.c&&m.c.length)parts.push(m.c.length+'/5 thói quen');if(m&&m.n)parts.push('“'+m.n.replace(/</g,'&lt;')+'”');
+if(!m&&!parts.length)continue;h+='<div class="dia"><b>'+(i==0?'Hôm nay':i==1?'Hôm qua':WD[d.getDay()]+' '+d.getDate()+'/'+(d.getMonth()+1))+'</b><span class="sc">'+(m?score(m):'–')+'</span><span>'+parts.join(' · ')+'</span></div>'}
+$('dia').innerHTML=h+'</div>'}
+function saveMood(){var all=ls('tau_mood',{}),c=[];document.querySelectorAll('#ck span').forEach(function(s){if(s.classList.contains('on'))c.push(+s.dataset.i)});
+var m={v:+$('rv').value,e:+$('re').value,z:+$('rz').value,s:+$('rs').value,c:c,n:$('nt').value};all[key(new Date())]=m;sv('tau_mood',all);$('ms').textContent='Đã lưu. Điểm cảm xúc hôm nay: '+score(m)+'/100 ('+lvl(score(m))+')';renderHist();renderAdv();renderDia()}
+function renderHist(){var all=ls('tau_mood',{}),h='<div class="card"><h3>14 ngày gần nhất</h3><div class="bars">',l='<div class="lab">',n=0,sum=0;
+for(var i=13;i>=0;i--){var d=dayOff(i),m=all[key(d)],s=m?score(m):0;if(m){n++;sum+=s}h+='<div class="'+(i==0?'hi':'')+'" style="height:'+(s*.9)+'px" title="'+s+'"></div>';l+='<span>'+(i%3==0?d.getDate():'')+'</span>'}
+h+='</div>'+l+'</div><div class="mut" style="margin-top:6px">'+(n?'Trung bình '+Math.round(sum/n)+'/100 trong '+n+' ngày đã chấm.':'Chưa có ngày nào được chấm.')+'</div></div>';$('hist').innerHTML=h}
+function pearson(a,b){var n=a.length,ma=avg(a),mb=avg(b),sa=0,sb=0,sc=0;for(var i=0;i<n;i++){sa+=(a[i]-ma)*(a[i]-ma);sb+=(b[i]-mb)*(b[i]-mb);sc+=(a[i]-ma)*(b[i]-mb)}return sa&&sb?sc/Math.sqrt(sa*sb):0}
+function renderAdv(){var all=ls('tau_mood',{}),work=ls('tau_work',{}),ent=[];
+for(var i=13;i>=0;i--){var k=key(dayOff(i));if(all[k])ent.push({k:k,m:all[k],s:score(all[k]),i:i})}
+var h='<div class="card"><h3>Phân tích & lời khuyên</h3>';
+if(ent.length<3){$('adv').innerHTML=h+'<div class="tip">Hãy chấm điểm ít nhất 3 ngày để có phân tích. Tau sẽ nhắc bạn lúc 21:30 mỗi ngày.</div></div>';return}
+var last7=ent.filter(function(e){return e.i<7}),prev7=ent.filter(function(e){return e.i>=7}),a7=avg(last7.map(function(e){return e.s}));
+h+='<div class="row"><span>Điểm trung bình 7 ngày</span><b>'+Math.round(a7)+'/100 ('+lvl(a7)+')</b></div>';
+if(prev7.length>=3){var d=a7-avg(prev7.map(function(e){return e.s}));h+='<div class="tip '+(d>=5?'ok':d<=-5?'w':'')+'">'+(d>=5?'Tuần này khá hơn tuần trước '+Math.round(d)+' điểm. Cứ giữ những thói quen đang làm.':d<=-5?'Tuần này thấp hơn tuần trước '+Math.round(-d)+' điểm. Thử nhìn lại điều gì đã thay đổi: giấc ngủ, công việc, thời gian dùng điện thoại.':'Điểm gần như không đổi so với tuần trước.')+'</div>'}
+var fa={};FAC.forEach(function(f){fa[f[0]]=avg(last7.map(function(e){return f[2]?100-e.m[f[0]]:e.m[f[0]]}))});
+var worst=FAC.slice().sort(function(a,b){return fa[a[0]]-fa[b[0]]})[0];
+var T={v:'Vui vẻ đang thấp nhất. Mỗi ngày hãy làm một việc nhỏ khiến bạn thấy dễ chịu: ra nắng 10 phút, nghe một bài thích, nhắn tin cho người thân. Việc nhỏ làm đều hiệu quả hơn việc lớn làm một lần.',e:'Năng lượng đang thấp nhất. Kiểm tra ba thứ trước: ngủ đủ 7 đến 8 giờ, uống đủ nước, và vận động nhẹ 10 phút. Tab Thể thao có bài khởi động 5 phút.',z:'Căng thẳng đang cao nhất. Thử hít vào 4 giây, thở ra 6 giây, lặp lại 10 lần. Viết ra 3 việc quan trọng nhất hôm nay và chỉ làm từng việc một. Bớt tin tức và mạng xã hội trước khi ngủ.',s:'Giấc ngủ đang kém nhất. Giữ giờ ngủ cố định, tắt màn hình trước giờ ngủ 30 phút (bật Giờ đi ngủ ở tab Tập trung), tránh cà phê sau 14 giờ.'};
+h+='<div class="tip w"><b>Điểm yếu nhất tuần này:</b> '+worst[1]+' (~'+Math.round(fa[worst[0]])+'/100). '+T[worst[0]]+'</div>';
+CHK.forEach(function(c,ci){var w=ent.filter(function(e){return e.m.c.indexOf(ci)>=0}),wo=ent.filter(function(e){return e.m.c.indexOf(ci)<0});if(w.length>=2&&wo.length>=2){var d=avg(w.map(function(e){return e.s}))-avg(wo.map(function(e){return e.s}));if(Math.abs(d)>=8)h+='<div class="tip '+(d>0?'ok':'')+'">Ngày "'+c+'" điểm '+(d>0?'cao hơn ':'thấp hơn ')+Math.round(Math.abs(d))+' điểm so với ngày không.'+(d>0?' Nên giữ thói quen này.':'')+'</div>'}});
+var wp=ent.filter(function(e){return (work[e.k]||0)>0}),wn=ent.filter(function(e){return !(work[e.k]||0)});
+if(wp.length>=2&&wn.length>=2){var dd=avg(wp.map(function(e){return e.s}))-avg(wn.map(function(e){return e.s}));if(dd>=5)h+='<div class="tip ok">Ngày có tập thể thao trong Tau, điểm cao hơn '+Math.round(dd)+' điểm. Đứng dậy 10 phút cũng có ích.</div>'}
+if(wk&&wk.days){var xs=[],ys=[];ent.forEach(function(e){var d=wk.days.filter(function(x){return x.k==e.k})[0];if(d&&d.t>0){xs.push(d.t/3600000);ys.push(e.s)}});
+if(xs.length>=5){var r=pearson(xs,ys);if(r<=-.3)h+='<div class="tip w">Ngày dùng điện thoại nhiều thường có điểm cảm xúc thấp hơn (hệ số tương quan '+r.toFixed(2)+', '+xs.length+' ngày). Chưa chắc là nguyên nhân, nhưng đáng thử giảm một tuần xem có khác không.</div>';else if(r>=.3)h+='<div class="tip">Ngày dùng điện thoại nhiều lại không làm điểm của bạn thấp đi ('+r.toFixed(2)+'). Có thể bạn đang dùng điện thoại để học, làm việc hoặc nói chuyện, điều đó là ổn.</div>';else h+='<div class="tip">Chưa thấy mối liên hệ rõ giữa thời gian dùng điện thoại và cảm xúc của bạn ('+r.toFixed(2)+').</div>'}}
+var lastN=ent.slice(-3);if(lastN.length==3&&lastN.every(function(e){return e.s<40}))h+='<div class="tip w">Ba ngày gần nhất điểm đều thấp. Hãy nói chuyện với một người bạn tin tưởng. Nếu cảm giác nặng nề kéo dài hơn hai tuần hoặc ảnh hưởng đến ăn ngủ, học và làm việc, nên gặp chuyên gia tâm lý hoặc bác sĩ.</div>';
+h+='<div class="mut" style="margin-top:8px">Đây là công cụ tự theo dõi, không phải chẩn đoán y khoa.</div></div>';$('adv').innerHTML=h}
+
+/* ---------- Thể thao ---------- */
+var RT=[
+{n:'Khởi động 5 phút',d:'Làm nóng người trước khi tập',w:30,r:10,x:[['Xoay khớp vai, cổ tay','Xoay tròn hai vai và cổ tay, chậm và đều'],['Jumping jack','Nhảy dang tay chân, nhịp nhàng'],['Chạy tại chỗ','Nâng gối vừa phải, đánh tay'],['Gập người chạm chân','Hai chân rộng bằng vai, gập xuống thả lỏng'],['Xoay hông','Hai tay chống hông, xoay tròn']]},
+{n:'Nhảy dây không dây',d:'10 phút, không cần dây thật',w:45,r:15,x:[['Nhảy dây hai chân','Giả vờ quay dây, nhảy thấp, tiếp đất bằng mũi chân'],['Nhảy dây đổi chân','Nhảy luân phiên từng chân như chạy'],['Nhảy dây hai chân','Giữ nhịp đều, thở đều'],['Nhảy dây nâng gối','Nâng gối cao hơn'],['Nhảy dây hai chân','Nhảy nhanh hơn trong hiệp cuối'],['Nhảy dây đổi chân','Cố giữ đến hết giờ'],['Nhảy dây hai chân','Hiệp cuối, thả lỏng vai']]},
+{n:'Chân và mông',d:'8 phút, không cần dụng cụ',w:40,r:15,x:[['Squat','Chân rộng bằng vai, hạ hông như ngồi ghế, lưng thẳng'],['Lunge luân phiên','Bước một chân ra trước, gối không quá mũi chân'],['Cầu mông','Nằm ngửa, co gối, nâng hông lên siết mông'],['Squat nhảy nhẹ','Hạ squat rồi nhảy lên nhẹ, tiếp đất êm'],['Squat giữ','Giữ nguyên tư thế squat thấp'],['Nâng bắp chân','Đứng nhón gót lên xuống']]},
+{n:'Thân trên',d:'8 phút, hít đất và plank',w:30,r:15,x:[['Hít đất (có thể chống gối)','Thân thẳng, hạ ngực gần sàn'],['Plank chống tay','Người một đường thẳng, siết bụng'],['Dips bằng ghế','Hai tay chống mép ghế, hạ người xuống'],['Superman','Nằm sấp, nâng tay và chân cùng lúc'],['Hít đất rộng tay','Tay rộng hơn vai'],['Plank nghiêng','Chống một tay, nghiêng người, đổi bên giữa chừng']]},
+{n:'Bụng',d:'6 phút, săn chắc vùng bụng',w:35,r:10,x:[['Gập bụng','Tay đặt sau đầu, không kéo cổ'],['Nâng chân','Nằm ngửa, nâng hai chân thẳng lên'],['Bicycle crunch','Khuỷu tay chạm gối đối diện'],['Plank','Giữ thân thẳng, thở đều'],['Mountain climber','Chống tay, kéo gối về ngực nhanh'],['Russian twist','Ngồi nghiêng, xoay người sang hai bên']]},
+{n:'Toàn thân đốt mỡ',d:'12 phút, cường độ cao',w:40,r:15,x:[['Burpee','Hạ xuống, bật người lên, vỗ tay trên đầu'],['Jumping jack','Dang tay chân nhanh'],['Squat nhảy','Nhảy cao, tiếp đất êm'],['Mountain climber','Giữ hông thấp'],['Nâng gối cao','Chạy tại chỗ, gối ngang hông'],['Plank','Nghỉ tích cực, giữ thân thẳng'],['Burpee','Hiệp cuối, cố hết sức nhưng giữ đúng tư thế'],['Hít đất','Làm chậm, đúng tư thế']]}];
+function sport(){var work=ls('tau_work',{}),wk7=0,st=0,tm=work[key(new Date())]||0;for(var i=0;i<7;i++)wk7+=work[key(dayOff(i))]||0;
+for(var i=work[key(new Date())]?0:1;i<60;i++){if(work[key(dayOff(i))])st++;else break}
+var h='<div class="card"><h3>Hôm nay đã tập</h3><div class="big">'+tm+' phút</div><div class="mut">7 ngày: '+wk7+' phút · chuỗi '+st+' ngày liên tiếp</div></div><div class="card"><h3>Chọn bài tập</h3><div class="mut">Tập trong nhà, không cần dụng cụ. Khởi động trước, dừng ngay nếu đau nhói hoặc chóng mặt. Người có bệnh tim, huyết áp hoặc chấn thương khớp nên hỏi bác sĩ trước.</div>';
+RT.forEach(function(r,i){var tot=Math.round(r.x.length*(r.w+r.r)/60);h+='<div class="rt"><b>'+r.n+'</b><div class="mut">'+r.d+' · '+r.x.length+' bài · khoảng '+tot+' phút</div><button class="b" onclick="startW('+i+')">Bắt đầu ngay</button></div>'});
+$('v').innerHTML=h+'</div>'}
+var W=null,au=null;
+function beep(f,ms){try{au=au||new (window.AudioContext||window.webkitAudioContext)();var o=au.createOscillator(),g=au.createGain();o.frequency.value=f;g.gain.value=.2;o.connect(g);g.connect(au.destination);o.start();o.stop(au.currentTime+ms/1000)}catch(e){}}
+function startW(i){var r=RT[i];W={r:r,i:0,ph:'ready',end:Date.now()+5000,paused:0,start:Date.now(),last:-1};
+$('v').innerHTML='<div class="card"><div class="mut" id="wp"></div><div class="ex" id="we"></div><div class="tm" id="wt"></div><div class="mut" id="wh" style="text-align:center"></div><div class="mut" id="wn" style="text-align:center;margin-top:6px"></div><div style="text-align:center"><button class="b" id="pz" onclick="pauseW()">Tạm dừng</button><button class="b g" onclick="skipW()">Bỏ qua</button><button class="b g" onclick="endW(false)">Dừng</button></div></div>';
+beep(440,150);timer=setInterval(tickW,200);tickW()}
+function pauseW(){if(!W)return;if(W.paused){W.end+=Date.now()-W.paused;W.paused=0;$('pz').textContent='Tạm dừng'}else{W.paused=Date.now();$('pz').textContent='Tiếp tục'}}
+function skipW(){if(W)W.end=Date.now()}
+function tickW(){if(!W||W.paused)return;var left=Math.ceil((W.end-Date.now())/1000),r=W.r;
+if(left<=0){if(W.ph=='ready'||W.ph=='rest'){W.ph='work';W.end=Date.now()+r.w*1000;beep(880,300)}else{W.i++;if(W.i>=r.x.length){endW(true);return}W.ph='rest';W.end=Date.now()+r.r*1000;beep(520,200)}left=Math.ceil((W.end-Date.now())/1000)}
+if(left<=3&&left>0&&W.last!=left){beep(660,80)}W.last=left;
+var cur=r.x[Math.min(W.i,r.x.length-1)],nx=r.x[W.i+(W.ph=='work'?1:0)];
+$('wp').textContent='Bài '+(W.i+1)+'/'+r.x.length+' · '+r.n;
+$('we').textContent=W.ph=='ready'?'Chuẩn bị':W.ph=='work'?cur[0]:'Nghỉ';
+$('wt').textContent=left;$('wt').style.color=W.ph=='work'?'#C2410C':'#15803D';
+$('wh').textContent=W.ph=='work'?cur[1]:W.ph=='ready'?'Bài đầu: '+r.x[0][0]:'Chuẩn bị tiếp';
+$('wn').textContent=W.ph!='work'&&nx?'Tiếp theo: '+nx[0]:''}
+function endW(done){clearInterval(timer);timer=null;var mins=Math.max(done?1:0,Math.round((Date.now()-W.start-(W.paused?Date.now()-W.paused:0))/60000));if(!done&&mins<1){W=null;go(1);return}
+var work=ls('tau_work',{}),k=key(new Date());work[k]=(work[k]||0)+mins;sv('tau_work',work);beep(988,500);W=null;
+$('v').innerHTML='<div class="card"><div class="ex">'+(done?'Hoàn thành! 🎉':'Đã dừng')+'</div><div class="mut" style="text-align:center;margin:8px 0">Đã ghi '+mins+' phút. Uống một ngụm nước và vươn vai nhé.</div><div style="text-align:center"><button class="b" onclick="go(1)">Xong</button></div></div>'}
+
+/* ---------- Báo cáo tuần ---------- */
+function report(){$('v').innerHTML='<div class="card"><div class="mut">Đang tính báo cáo...</div></div>';setTimeout(function(){wk=nat('weekJson');var v=$('v');if(!v)return;if(!wk){v.innerHTML='<div class="card"><div class="mut">Chưa đọc được dữ liệu. Hãy mở trong app Tau và cấp quyền xem thời gian dùng.</div></div>';return}v.innerHTML=repHtml()},50)}
+function repHtml(){var D=wk.days,cur=D.slice(0,7),pre=D.slice(7,14),ct=0,pt=0,cn=0,pn=0,ce=0,best=null,low=null;
+cur.forEach(function(d){ct+=d.t;ce+=d.e;if(d.t>0){cn++;if(!best||d.t>best.t)best=d;if(!low||d.t<low.t)low=d}});pre.forEach(function(d){pt+=d.t;if(d.t>0)pn++});
+var ca=cn?ct/cn:0,pa=pn?pt/pn:0,all=ls('tau_mood',{}),work=ls('tau_work',{});
+var h='<div class="card"><h3>Báo cáo 7 ngày qua</h3><div class="big">'+fm(ct)+'</div><div class="mut">Trung bình '+fm(ca)+' mỗi ngày'+(pn?' · tuần trước '+fm(pa)+' ('+(pa?(ca>=pa?'+':'')+Math.round((ca-pa)*100/pa)+'%':'mới')+')':' · chưa đủ dữ liệu tuần trước')+'</div>';
+var mx=1;cur.forEach(function(d){if(d.t>mx)mx=d.t});h+='<div class="bars">';for(var i=6;i>=0;i--){var d=cur[i];h+='<div class="'+(i==0?'hi':'')+'" style="height:'+(d.t/mx*88)+'px"></div>'}h+='</div><div class="lab">';
+for(var i=6;i>=0;i--)h+='<span>'+WD[dayOff(i).getDay()]+'</span>';h+='</div></div>';
+h+='<div class="card"><h3>Điểm nổi bật</h3>';
+if(best)h+='<div class="row"><span>Ngày dùng nhiều nhất</span><b>'+WD[new Date(+best.k.slice(0,4),+best.k.slice(4,6)-1,+best.k.slice(6)).getDay()]+' · '+fm(best.t)+'</b></div>';
+if(low)h+='<div class="row"><span>Ngày dùng ít nhất</span><b>'+WD[new Date(+low.k.slice(0,4),+low.k.slice(4,6)-1,+low.k.slice(6)).getDay()]+' · '+fm(low.t)+'</b></div>';
+h+='<div class="row"><span>Giải trí & trò chơi</span><b>'+fm(ce)+(ct?' ('+Math.round(ce*100/ct)+'%)':'')+'</b></div>';
+var ms=[],ws=0;for(var i=0;i<7;i++){var k=key(dayOff(i));if(all[k])ms.push(score(all[k]));ws+=work[k]||0}
+h+='<div class="row"><span>Cảm xúc trung bình</span><b>'+(ms.length?Math.round(avg(ms))+'/100 ('+ms.length+' ngày)':'chưa chấm')+'</b></div><div class="row"><span>Thể thao</span><b>'+ws+' phút</b></div></div>';
+h+='<div class="card"><h3>App dùng nhiều nhất</h3>';var top=wk.top||[],tm=top.length?top[0][1]:1;
+if(!top.length)h+='<div class="mut">Chưa có số liệu.</div>';top.forEach(function(a){h+='<div class="row"><span>'+a[0]+'</span><b>'+fm(a[1])+'</b></div><div class="pb"><i style="width:'+(a[1]*100/tm)+'%"></i></div>'});h+='</div>';
+h+='<div class="card"><h3>Nhận xét & mục tiêu tuần sau</h3>';
+var tips=[];
+if(pn&&pa&&ca<pa*.9)tips.push(['ok','Bạn giảm thời gian dùng điện thoại '+Math.round((pa-ca)*100/pa)+'% so với tuần trước. Rất tốt, hãy giữ nhịp này.']);
+else if(pn&&pa&&ca>pa*1.1)tips.push(['w','Thời gian dùng tăng '+Math.round((ca-pa)*100/pa)+'% so với tuần trước. Thử đặt mục tiêu mỗi ngày ở tab Tập trung.']);
+if(ct&&ce*100/ct>=40)tips.push(['w','Giải trí chiếm hơn 40% thời gian dùng. Đặt quỹ giải trí mỗi ngày giúp bạn tự giới hạn.']);
+if(top.length&&ct&&top[0][1]*100/ct>=35)tips.push(['','"'+top[0][0]+'" chiếm '+Math.round(top[0][1]*100/ct)+'% thời gian. Thử đặt giới hạn riêng cho app này, giảm khoảng 10% so với tuần này.']);
+if(ca>=4*3600000)tips.push(['w','Trung bình hơn 4 giờ mỗi ngày. Hãy thử một khung giờ không điện thoại, ví dụ ăn cơm hoặc 1 giờ trước khi ngủ.']);
+if(ws<60)tips.push(['','Tuần này tập thể thao dưới 60 phút. Mục tiêu nhẹ: 3 buổi 10 phút ở tab Thể thao.']);
+if(ms.length<4)tips.push(['','Bạn mới chấm cảm xúc '+ms.length+' ngày. Chấm đủ 7 ngày để phân tích chính xác hơn.']);
+if(!tips.length)tips.push(['ok','Tuần này khá cân bằng. Chọn một mục tiêu nhỏ cho tuần sau và giữ đều.']);
+tips.forEach(function(t){h+='<div class="tip '+t[0]+'">'+t[1]+'</div>'});return h+'</div>'}
+
+/* ---------- Chăm sóc máy ---------- */
+function care(){var d=dev=nat('deviceJson');var h='';
+if(!d){$('v').innerHTML='<div class="card"><div class="mut">Chưa đọc được thông tin máy. Hãy mở trong app Tau.</div></div>'+tipsHtml();return}
+var GB=1073741824,used=d.st-d.sf,sp=Math.round(used*100/d.st),rp=Math.round((d.rt-d.ra)*100/d.rt);
+h+='<div class="card"><h3>Pin</h3><div class="big">'+d.bp+'%</div><div class="pb"><i style="width:'+d.bp+'%"></i></div><div class="mut">'+(d.ch?'Đang sạc':'Không sạc')+' · nhiệt độ '+d.bt.toFixed(1)+'°C · tình trạng: '+d.bh+'</div></div>';
+h+='<div class="card"><h3>Bộ nhớ</h3><div class="row"><span>Đã dùng</span><b>'+(used/GB).toFixed(1)+' / '+(d.st/GB).toFixed(0)+' GB ('+sp+'%)</b></div><div class="pb"><i style="width:'+sp+'%"></i></div><div class="row"><span>RAM đang dùng</span><b>'+rp+'%</b></div><div class="row"><span>Số app đã cài</span><b>'+d.ac+'</b></div></div>';
+h+='<div class="card"><h3>Việc nên làm ngay</h3>';var t=[];
+if(d.ch&&d.bp>=90)t.push(['w','Pin đã '+d.bp+'%, hãy rút sạc. Giữ pin trong khoảng 20 đến 80% giúp pin bền hơn nhiều năm.']);
+if(!d.ch&&d.bp<=20)t.push(['w','Pin còn '+d.bp+'%, nên sạc sớm. Để pin cạn về 0 thường xuyên làm pin chai nhanh.']);
+if(d.bt>=40)t.push(['w','Máy đang nóng '+d.bt.toFixed(0)+'°C. Ngừng sạc hoặc chơi game, bỏ ốp ra, tránh nắng.']);
+if(sp>=85)t.push(['w','Bộ nhớ đã đầy '+sp+'%. Xoá video, ảnh trùng, file tải về và app ít dùng. Máy đầy bộ nhớ chạy chậm và dễ lỗi.']);
+else if(sp>=70)t.push(['','Bộ nhớ dùng '+sp+'%. Nên dọn bớt trước khi đầy.']);
+if(rp>=85)t.push(['','RAM đang bị dùng nhiều. Khởi động lại máy sẽ giúp máy mượt hơn.']);
+if(d.un&&d.un.length)t.push(['','Những app chưa thấy bạn mở gần đây: '+d.un.join(', ')+'. Nếu không cần, hãy gỡ để nhẹ máy và an toàn hơn.']);
+if(!t.length)t.push(['ok','Máy đang ở trạng thái tốt, chưa cần làm gì thêm.']);
+t.forEach(function(x){h+='<div class="tip '+x[0]+'">'+x[1]+'</div>'});
+h+='<button class="b" onclick="op(\'storage\')">Mở cài đặt bộ nhớ</button><button class="b" onclick="op(\'battery\')">Tiết kiệm pin</button><button class="b" onclick="op(\'apps\')">Danh sách app</button></div>';
+var on=true;try{on=TauApp.getFlag('charge_alert')}catch(e){}
+h+='<div class="card"><h3>Nhắc bảo vệ pin</h3><div class="mut">Tau báo khi đang sạc đến 80% và khi máy nóng trên 42°C.</div><button class="b" id="fl" onclick="flag()">'+(on?'Đang bật · bấm để tắt':'Đang tắt · bấm để bật')+'</button></div>';
+$('v').innerHTML=h+tipsHtml()}
+function flag(){try{var n=!TauApp.getFlag('charge_alert');TauApp.setFlag('charge_alert',n);$('fl').textContent=n?'Đang bật · bấm để tắt':'Đang tắt · bấm để bật'}catch(e){}}
+function op(n){try{TauApp.openSetting(n)}catch(e){}}
+function tipsHtml(){var G=[['Sạc pin',['Giữ pin trong khoảng 20 đến 80%, không cần sạc đầy 100% mỗi lần.','Dùng sạc và cáp chính hãng hoặc đạt chuẩn, tránh sạc dỏm.','Không vừa sạc vừa chơi game nặng hoặc quay video, máy sẽ nóng và pin chai nhanh.','Sạc qua đêm thì bật chế độ sạc tối ưu của máy nếu có.','Tháo ốp khi sạc nhanh nếu thấy máy nóng.']],
+['Nhiệt độ',['Không để máy dưới nắng, trong xe đóng kín hoặc dưới gối khi sạc.','Máy nóng thì tắt màn hình, nghỉ vài phút, đừng bỏ vào tủ lạnh.']],
+['Dọn dẹp bộ nhớ',['Xoá video và ảnh trùng, sao lưu ảnh lên đám mây rồi xoá bản trong máy.','Dọn thư mục Download và file tin nhắn (Zalo, Messenger) mỗi tháng.','Xoá cache của app nặng (TikTok, Facebook, trình duyệt) trong cài đặt app.','Gỡ app lâu không dùng, nhất là app tự khởi động nền.','Chừa trống ít nhất 15% bộ nhớ.']],
+['Mượt và an toàn',['Khởi động lại máy khoảng một lần mỗi tuần.','Cập nhật hệ thống và app, chỉ cài app từ kho chính thức.','Đừng bấm vào link lạ, đặt khoá màn hình và bật tìm máy bị mất.','Dùng màn hình sáng vừa phải, bật tự động chỉnh độ sáng để tiết kiệm pin.','Làm sạch cổng sạc bằng que nhựa nhẹ nhàng nếu sạc chập chờn.']]];
+return G.map(function(g){return '<div class="card"><h3>'+g[0]+'</h3>'+g[1].map(function(t){return '<div class="tip">'+t+'</div>'}).join('')+'</div>'}).join('')}
+draw();
+</script></body></html>

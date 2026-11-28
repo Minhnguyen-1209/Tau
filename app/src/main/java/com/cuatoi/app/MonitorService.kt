@@ -8,7 +8,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -127,6 +129,20 @@ class MonitorService : Service() {
         } catch (t: Throwable) {
             Store.logSvc(this, "giữ chạy nền: lỗi ${t.javaClass.simpleName}")
         }
+        try {
+            val rx = object : BroadcastReceiver() {
+                override fun onReceive(c: Context, i: Intent) {
+                    try {
+                        onBattery(i)
+                    } catch (t: Throwable) {
+                    }
+                }
+            }
+            registerReceiver(rx, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            batRx = rx
+        } catch (t: Throwable) {
+            Store.setErr(this, "pin: $t")
+        }
         // Nếu lần trước bị tắt giữa lúc đang tắt tiếng thì trả âm lượng lại
         if (Store.p(this).getBoolean("we_muted", false)) {
             muted = true
@@ -161,6 +177,10 @@ class MonitorService : Service() {
         unmute()
         removePill()
         hideBlock()
+        try {
+            batRx?.let { unregisterReceiver(it) }
+        } catch (e: Exception) {
+        }
         super.onDestroy()
     }
 
@@ -311,6 +331,7 @@ class MonitorService : Service() {
         poll(now)
         applyForeground(now)
         checkGoal(now)
+        housekeeping(now)
         val fe = Store.focusEnd(this)
         if (fe > 0L && now >= fe) {
             Store.setFocusEnd(this, 0L)
@@ -386,6 +407,51 @@ class MonitorService : Service() {
     }
 
     private var goalAt = 0L
+    private var syncAt = 0L
+    private var batRx: BroadcastReceiver? = null
+    private var chgNotified = false
+    private var hotAt = 0L
+
+    private fun onBattery(i: Intent) {
+        val lv = i.getIntExtra("level", -1)
+        val sc = i.getIntExtra("scale", 100)
+        val pct = if (lv >= 0 && sc > 0) lv * 100 / sc else -1
+        val plugged = i.getIntExtra("plugged", 0) != 0
+        val temp = i.getIntExtra("temperature", 0) / 10.0
+        if (!plugged) chgNotified = false
+        if (!Store.p(this).getBoolean("charge_alert", true)) return
+        val now = System.currentTimeMillis()
+        if (plugged && pct >= 80 && !chgNotified) {
+            chgNotified = true
+            Notif.show(this, 92, "Pin đã $pct%", "Rút sạc khoảng 80% giúp pin bền hơn.")
+        }
+        if (temp >= 42.0 && now - hotAt > 600000L) {
+            hotAt = now
+            Notif.show(this, 93, "Máy đang nóng ${temp.toInt()}°C", "Tạm ngừng sạc hoặc chơi game, tháo ốp cho máy nguội.")
+        }
+    }
+
+    /** Mỗi 30 phút lưu số liệu từng ngày và từng khung giờ, Chủ nhật 20h báo cáo tuần. */
+    private fun housekeeping(now: Long) {
+        if (now - syncAt >= 1800000L && Usage.hasAccess(this)) {
+            syncAt = now
+            Thread {
+                try {
+                    Usage.syncDays(applicationContext, Usage.launcherSet(applicationContext), 2)
+                } catch (t: Throwable) {
+                }
+            }.start()
+        }
+        val c = java.util.Calendar.getInstance()
+        c.timeInMillis = now
+        if (c.get(java.util.Calendar.DAY_OF_WEEK) == java.util.Calendar.SUNDAY && c.get(java.util.Calendar.HOUR_OF_DAY) >= 20) {
+            val key = T.key(now)
+            if (Store.p(this).getString("week_notified", "") != key) {
+                Store.p(this).edit().putString("week_notified", key).apply()
+                Notif.show(this, 94, "Báo cáo tuần của bạn", "Mở Tau, mục Bản thân, tab Báo cáo để xem tuần này bạn dùng điện thoại thế nào.")
+            }
+        }
+    }
 
     /** Mỗi phút kiểm tra tổng thời gian hôm nay so với mục tiêu, báo một lần khi vượt. */
     private fun checkGoal(now: Long) {
