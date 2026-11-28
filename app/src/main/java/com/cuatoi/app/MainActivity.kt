@@ -18,6 +18,8 @@ import org.json.JSONObject
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.graphics.Canvas
+import android.graphics.Outline
+import android.view.ViewOutlineProvider
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -106,6 +108,14 @@ class MainActivity : Activity() {
     private val deep = Color.parseColor("#C2410C")
     private val ink = Color.parseColor("#1F2937")
     private val mut = Color.parseColor("#6B7280")
+    private val cream = Color.parseColor("#FAF5F0")
+    private val line = Color.parseColor("#EFE6DE")
+    private val folds = HashMap<String, Boolean>()
+    private val groupPages = arrayOf(intArrayOf(0, 1, 2), intArrayOf(5, 3, 4))
+    private val groupNames = arrayOf(arrayOf("Thời gian", "Tập trung", "Nhắc nhở"), arrayOf("Bản thân", "Tiện ích", "Trò chơi"))
+    private val lastPage = intArrayOf(0, 5)
+    private lateinit var subRow: LinearLayout
+    private lateinit var hdrStatus: TextView
 
     private var apps: List<AppInfo> = emptyList()
     private var appMap: Map<String, AppInfo> = emptyMap()
@@ -128,6 +138,9 @@ class MainActivity : Activity() {
     private val tick = object : Runnable {
         override fun run() {
             updateFocusLabel()
+            val on = monitorOn()
+            hdrStatus.text = if (on) "● Đang bảo vệ" else "● Chưa chạy"
+            hdrStatus.setTextColor(if (on) Color.parseColor("#15803D") else Color.RED)
             h.postDelayed(this, 1000)
         }
     }
@@ -251,8 +264,8 @@ class MainActivity : Activity() {
     }
 
     private fun head(t: String): TextView {
-        val v = tv(t, 24f, true, Color.WHITE)
-        v.setPadding(0, dp(8), 0, dp(12))
+        val v = tv(t, 1f)
+        v.visibility = View.GONE
         return v
     }
 
@@ -261,9 +274,10 @@ class MainActivity : Activity() {
         l.orientation = LinearLayout.VERTICAL
         val g = GradientDrawable()
         g.setColor(Color.WHITE)
-        g.cornerRadius = dp(16).toFloat()
+        g.setStroke(dp(1), line)
+        g.cornerRadius = dp(18).toFloat()
         l.background = g
-        l.setPadding(dp(14), dp(12), dp(14), dp(12))
+        l.setPadding(dp(16), dp(14), dp(16), dp(14))
         val lp = LinearLayout.LayoutParams(-1, -2)
         lp.bottomMargin = dp(12)
         l.layoutParams = lp
@@ -278,8 +292,12 @@ class MainActivity : Activity() {
         b.stateListAnimator = null
         val g = GradientDrawable()
         g.setColor(deep)
-        g.cornerRadius = dp(10).toFloat()
+        g.cornerRadius = dp(12).toFloat()
         b.background = g
+        b.textSize = 13f
+        b.minHeight = 0
+        b.minimumHeight = 0
+        b.setPadding(dp(14), dp(9), dp(14), dp(9))
         b.setOnClickListener { f() }
         val lp = LinearLayout.LayoutParams(-2, -2)
         lp.topMargin = dp(8)
@@ -294,19 +312,49 @@ class MainActivity : Activity() {
         b.isAllCaps = false
         b.stateListAnimator = null
         val g = GradientDrawable()
-        g.cornerRadius = dp(20).toFloat()
-        g.setColor(if (sel) Color.WHITE else Color.parseColor("#33FFFFFF"))
+        g.cornerRadius = dp(18).toFloat()
+        g.setColor(if (sel) deep else Color.parseColor("#F1E8E0"))
         b.background = g
-        b.setTextColor(if (sel) deep else Color.WHITE)
+        b.textSize = 13f
+        b.minHeight = 0
+        b.minimumHeight = 0
+        b.setPadding(dp(8), dp(8), dp(8), dp(8))
+        b.setTextColor(if (sel) Color.WHITE else Color.parseColor("#6B4A3A"))
         b.setOnClickListener { f() }
         return b
+    }
+
+    /** Thẻ có thể thu gọn, nhớ trạng thái mở/đóng. Trả về phần thân để thêm nội dung. */
+    private fun foldCard(ll: LinearLayout, title: String): LinearLayout {
+        val c = card()
+        val open = folds[title] ?: false
+        val hd = LinearLayout(this)
+        hd.orientation = LinearLayout.HORIZONTAL
+        hd.gravity = Gravity.CENTER_VERTICAL
+        hd.setPadding(0, dp(2), 0, dp(2))
+        hd.addView(tv(title, 15f, true), LinearLayout.LayoutParams(0, -2, 1f))
+        val ch = tv(if (open) "–" else "+", 20f, false, mut)
+        hd.addView(ch)
+        c.addView(hd)
+        val body = LinearLayout(this)
+        body.orientation = LinearLayout.VERTICAL
+        body.visibility = if (open) View.VISIBLE else View.GONE
+        c.addView(body)
+        hd.setOnClickListener {
+            val o = body.visibility != View.VISIBLE
+            body.visibility = if (o) View.VISIBLE else View.GONE
+            ch.text = if (o) "–" else "+"
+            folds[title] = o
+        }
+        ll.addView(c)
+        return body
     }
 
     private fun scrollPage(): Pair<ScrollView, LinearLayout> {
         val s = ScrollView(this)
         val l = LinearLayout(this)
         l.orientation = LinearLayout.VERTICAL
-        l.setPadding(dp(16), dp(12), dp(16), dp(24))
+        l.setPadding(dp(16), dp(4), dp(16), dp(24))
         s.addView(l)
         return Pair(s, l)
     }
@@ -318,7 +366,7 @@ class MainActivity : Activity() {
         w.settings.domStorageEnabled = true
         w.addJavascriptInterface(Bridge(), "TauApp")
         w.webViewClient = WebViewClient()
-        w.setBackgroundColor(Color.parseColor("#FFF4EA"))
+        w.setBackgroundColor(cream)
         val html = assets.open("cuatoi.html").bufferedReader().use { it.readText() }
         w.loadDataWithBaseURL("https://tau.app/", html, "text/html", "utf-8", null)
         return w
@@ -352,15 +400,44 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Store.logSvc(this, "mở Tau (pid ${Process.myPid()})")
-        window.statusBarColor = orange
+        window.statusBarColor = cream
         window.navigationBarColor = Color.WHITE
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         loadApps()
 
         val rootF = FrameLayout(this)
-        rootF.addView(TauBg(this), FrameLayout.LayoutParams(-1, -1))
+        rootF.setBackgroundColor(cream)
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         rootF.addView(col, FrameLayout.LayoutParams(-1, -1))
+
+        // Đầu trang: logo, tên và trạng thái bộ theo dõi
+        val top = LinearLayout(this)
+        top.orientation = LinearLayout.HORIZONTAL
+        top.gravity = Gravity.CENTER_VERTICAL
+        top.setPadding(dp(16), dp(10), dp(16), dp(4))
+        val logo = ImageView(this)
+        logo.setImageResource(R.drawable.tau_logo)
+        logo.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(v: View, o: Outline) {
+                o.setRoundRect(0, 0, v.width, v.height, dp(9).toFloat())
+            }
+        }
+        logo.clipToOutline = true
+        top.addView(logo, LinearLayout.LayoutParams(dp(32), dp(32)))
+        val ttl = tv("Tau", 20f, true)
+        ttl.setPadding(dp(10), 0, 0, 0)
+        top.addView(ttl, LinearLayout.LayoutParams(0, -2, 1f))
+        hdrStatus = tv("", 12f, true, mut)
+        hdrStatus.setOnClickListener { showTab(1) }
+        top.addView(hdrStatus)
+        col.addView(top, LinearLayout.LayoutParams(-1, -2))
+
+        subRow = LinearLayout(this)
+        subRow.orientation = LinearLayout.HORIZONTAL
+        subRow.setPadding(dp(16), dp(6), dp(16), dp(6))
+        col.addView(subRow, LinearLayout.LayoutParams(-1, -2))
 
         val content = FrameLayout(this)
         col.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -386,18 +463,24 @@ class MainActivity : Activity() {
 
         val nav = LinearLayout(this)
         nav.setBackgroundColor(Color.WHITE)
-        val names = arrayOf("Thời gian", "Tập trung", "Sức khoẻ", "Tiện ích", "Trò chơi", "Bản thân")
-        navItems = Array(6) { i ->
+        val names = arrayOf("Điện thoại", "Cuộc sống")
+        navItems = Array(2) { g ->
             val t = TextView(this)
-            t.text = names[i]
+            t.text = names[g]
             t.gravity = Gravity.CENTER
-            t.textSize = 11f
-            t.setPadding(0, dp(14), 0, dp(14))
-            t.setOnClickListener { showTab(i) }
+            t.textSize = 13f
+            t.setPadding(0, dp(13), 0, dp(13))
+            t.setOnClickListener { showTab(lastPage[g]) }
             nav.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
             t
         }
-        col.addView(nav, LinearLayout.LayoutParams(-1, -2))
+        val navWrap = LinearLayout(this)
+        navWrap.orientation = LinearLayout.VERTICAL
+        val navLine = View(this)
+        navLine.setBackgroundColor(line)
+        navWrap.addView(navLine, LinearLayout.LayoutParams(-1, 1))
+        navWrap.addView(nav)
+        col.addView(navWrap, LinearLayout.LayoutParams(-1, -2))
         setContentView(rootF)
         showTab(0)
     }
@@ -436,11 +519,13 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (tab == 3 && web.canGoBack()) web.goBack() else if (tab >= 4) showTab(0) else super.onBackPressed()
+        if (tab == 3 && web.canGoBack()) web.goBack() else if (tab != 0) showTab(0) else super.onBackPressed()
     }
 
     private fun showTab(i: Int) {
         tab = i
+        val g = if (i == 0 || i == 1 || i == 2) 0 else 1
+        lastPage[g] = i
         sTime.visibility = if (i == 0) View.VISIBLE else View.GONE
         sFocus.visibility = if (i == 1) View.VISIBLE else View.GONE
         sHealth.visibility = if (i == 2) View.VISIBLE else View.GONE
@@ -448,9 +533,17 @@ class MainActivity : Activity() {
         gameWeb.visibility = if (i == 4) View.VISIBLE else View.GONE
         wellWeb.visibility = if (i == 5) View.VISIBLE else View.GONE
         if (i == 5) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        for (k in 0 until 6) {
-            navItems[k].setTextColor(if (k == i) deep else mut)
-            navItems[k].typeface = if (k == i) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        subRow.removeAllViews()
+        for (k in 0..2) {
+            val pg = groupPages[g][k]
+            val b = seg(groupNames[g][k], pg == i) { showTab(pg) }
+            val lp = LinearLayout.LayoutParams(0, -2, 1f)
+            if (k < 2) lp.rightMargin = dp(6)
+            subRow.addView(b, lp)
+        }
+        for (k in 0 until 2) {
+            navItems[k].setTextColor(if (k == g) deep else mut)
+            navItems[k].typeface = if (k == g) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
         refresh()
     }
@@ -959,153 +1052,28 @@ class MainActivity : Activity() {
         val running = monitorOn()
         st.addView(
             tv(
-                if (running) "Bộ theo dõi: đang chạy" else "Bộ theo dõi: chưa chạy",
+                if (running) "● Bộ theo dõi đang chạy" else "● Bộ theo dõi chưa chạy",
                 15f, true, if (running) Color.parseColor("#15803D") else Color.RED
             )
         )
-        st.addView(tv("Tau không còn cần dịch vụ trợ năng. Bộ theo dõi chạy nền với một thông báo nhỏ, bạn có thể tắt Tau trong mục trợ năng.", 12f, false, mut))
         if (!running) {
-            st.addView(tv("Redmi hay tắt ngầm khi bạn vuốt tắt app hoặc bị hạn chế pin. Bấm khởi động, rồi làm các bước ở thẻ Giữ chạy luôn bên dưới.", 12f, false, mut))
+            st.addView(tv("Redmi hay tắt ngầm khi bạn vuốt tắt app hoặc bị hạn chế pin. Bấm khởi động, rồi làm các bước ở mục Giữ chạy luôn bên dưới.", 12f, false, mut))
             st.addView(btn("Khởi động bộ theo dõi") {
                 MonitorService.start(this)
                 h.postDelayed({ buildFocus() }, 1500)
             })
         }
-        val slog = Store.p(this).getString("svc_log", null)
-        if (slog != null) st.addView(tv("Nhật ký:\n$slog", 11f, false, mut))
-        val lastPkg = Store.p(this).getString("last_pkg", null)
-        val lastT = Store.p(this).getLong("last_t", 0L)
-        st.addView(
-            tv(
-                if (lastPkg == null) "Chưa ghi nhận app nào. Hãy mở một app khác rồi quay lại đây."
-                else "App gần nhất: ${T.hms(lastT)} · $lastPkg",
-                12f, false, mut
-            )
-        )
-        val err = Store.p(this).getString("last_err", null)
-        if (err != null) st.addView(tv("Lỗi gần nhất: $err", 12f, false, Color.RED))
-        st.addView(tv("Ô thời gian: " + (Store.p(this).getString("pill_state", null) ?: "chưa có thông tin"), 12f, false, mut))
         if (!Settings.canDrawOverlays(this)) {
             st.addView(tv("Chưa cấp quyền hiển thị trên app khác. Quyền này bắt buộc để hiện ô thời gian và màn hình chặn.", 12f, false, Color.RED))
             st.addView(btn("Cấp quyền hiển thị trên app khác") {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             })
-        } else {
-            st.addView(tv("Quyền hiển thị trên app khác: đã cấp", 12f, false, mut))
         }
-        st.addView(btn("Hiện thử ô thời gian") {
-            val svc = MonitorService.inst
-            if (svc == null) {
-                Toast.makeText(this, "Bộ theo dõi chưa chạy. Bấm Khởi động bộ theo dõi.", Toast.LENGTH_LONG).show()
-            } else {
-                svc.demo()
-                Toast.makeText(this, "Nhìn ô cam ở góc màn hình trong vài giây", Toast.LENGTH_LONG).show()
-            }
-        })
         if (!Usage.hasAccess(this)) st.addView(btn("Cấp quyền xem thời gian dùng") { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) })
-        ll.addView(st)
-
-        val kc = card()
-        kc.addView(tv("Giữ chạy luôn (Redmi)", 16f, true))
-        kc.addView(tv("1. Mở màn hình đa nhiệm, nhấn giữ thẻ Tau và bấm biểu tượng khoá.\n2. Bật Tự khởi động cho Tau.\n3. Đặt Tiết kiệm pin của Tau là Không hạn chế.\nSau đó đừng vuốt tắt Tau khỏi màn hình đa nhiệm.", 12f, false, mut))
-        kc.addView(btn("Mở cài đặt Tự khởi động") {
-            openFirst(listOf(Intent().setComponent(ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"))))
-        })
-        kc.addView(btn("Mở cài đặt pin của Tau") {
-            openFirst(
-                listOf(
-                    Intent().setComponent(ComponentName("com.miui.powerkeeper", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"))
-                        .putExtra("package_name", packageName).putExtra("package_label", "Tau")
-                )
-            )
-        })
-        ll.addView(kc)
-
-        val bc = card()
-        val bsw = Switch(this)
-        bsw.text = "Giờ đi ngủ"
-        bsw.textSize = 16f
-        bsw.isChecked = Store.bedOn(this)
-        bsw.setOnCheckedChangeListener { _, v -> Store.p(this).edit().putBoolean("bed_on", v).apply() }
-        bc.addView(bsw)
-        bc.addView(tv("Trong khoảng này các app giải trí bị khoá theo chu kỳ đếm ngược như bình thường, để bạn buông điện thoại đi ngủ.", 12f, false, mut))
-        bc.addView(btn("Bắt đầu: ${T.mm(Store.bedStart(this))}") {
-            val s0 = Store.bedStart(this)
-            TimePickerDialog(this, { _, hh, mm -> Store.p(this).edit().putInt("bed_s", hh * 60 + mm).apply(); buildFocus() }, s0 / 60, s0 % 60, true).show()
-        })
-        bc.addView(btn("Kết thúc: ${T.mm(Store.bedEnd(this))}") {
-            val e0 = Store.bedEnd(this)
-            TimePickerDialog(this, { _, hh, mm -> Store.p(this).edit().putInt("bed_e", hh * 60 + mm).apply(); buildFocus() }, e0 / 60, e0 % 60, true).show()
-        })
-        ll.addView(bc)
-
-        val gc = card()
-        gc.addView(tv("Mục tiêu mỗi ngày", 16f, true))
-        gc.addView(tv("Đặt tổng số phút tối đa dùng điện thoại mỗi ngày. Vượt thì Tau báo, đạt liên tiếp nhiều ngày thì có chuỗi ở tab Thời gian.", 12f, false, mut))
-        val gm = Store.goalMin(this)
-        gc.addView(btn(if (gm > 0) "Mục tiêu: $gm phút" else "Đặt mục tiêu") {
-            askNum("Mục tiêu (phút mỗi ngày), 0 = tắt", "Số phút", gm, 0, 1440) { Store.p(this).edit().putInt("goal_min", it).apply(); buildFocus() }
-        })
-        ll.addView(gc)
-
-        val lk = card()
-        lk.addView(tv("Thời gian khoá app", 16f, true))
-        lk.addView(tv("Khi app bị chặn: màn hình chặn đếm ngược, hết đếm thì cho dùng, hết giờ dùng thì khoá lại. Âm thanh bị tắt trong lúc khoá.", 12f, false, mut))
-        lk.addView(btn("Chờ trước khi mở: ${MonitorService.fmtSec(Store.waitSec(this))}") {
-            askSec("Số giây chờ trước khi mở", Store.waitSec(this), 3, 600) { Store.setWaitSec(this, it); buildFocus() }
-        })
-        lk.addView(btn("Được dùng: ${MonitorService.fmtSec(Store.openSec(this))}") {
-            askSec("Số giây được dùng trước khi khoá lại", Store.openSec(this), 10, 3600) { Store.setOpenSec(this, it); buildFocus() }
-        })
-        ll.addView(lk)
-
-        val oc = card()
-        val osw = Switch(this)
-        osw.text = "Hiện đồng hồ nhỏ khi dùng app"
-        osw.textSize = 15f
-        osw.isChecked = Store.p(this).getBoolean("overlay_on", true)
-        osw.setOnCheckedChangeListener { _, v -> Store.p(this).edit().putBoolean("overlay_on", v).apply() }
-        oc.addView(osw)
-        oc.addView(tv("Hiện số phút bạn đã dùng app đó hôm nay ở góc màn hình, kèm giới hạn nếu có.", 12f, false, mut))
-        val posNames = arrayOf("Trên phải", "Trên trái", "Dưới phải", "Dưới trái")
-        val pos = Store.p(this).getInt("overlay_pos", 0)
-        oc.addView(btn("Vị trí: ${posNames[pos]}") {
-            Store.p(this).edit().putInt("overlay_pos", (pos + 1) % 4).apply()
-            buildFocus()
-        })
-        ll.addView(oc)
-
-        val ec = card()
-        ec.addView(tv("Hẹn giờ giải trí", 16f, true))
-        ec.addView(tv("Quỹ thời gian chung mỗi ngày cho các app trò chơi và giải trí. Dùng hết quỹ là các app này bị chặn.", 12f, false, mut))
-        val elim = Store.entLimit(this)
-        val el = tv("", 14f)
-        el.setPadding(0, dp(8), 0, dp(4))
-        ec.addView(el)
-        val ebar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
-        ebar.max = 100
-        ebar.progressTintList = ColorStateList.valueOf(orange)
-        ec.addView(ebar, LinearLayout.LayoutParams(-1, dp(10)))
-        if (elim <= 0) {
-            el.text = "Chưa đặt giới hạn · ${Ent.set(this).size} app đang tính là giải trí"
-        } else if (!Usage.hasAccess(this)) {
-            el.text = "Cần cấp quyền xem thời gian dùng ở tab Thời gian."
-        } else {
-            el.text = "Đang tính..."
-            Thread {
-                val now = System.currentTimeMillis()
-                val set = Ent.set(this)
-                var tot = 0L
-                for (s in Usage.sessions(this, T.dayStart(now), now)) if (set.contains(s.pkg)) tot += s.end - s.start
-                runOnUiThread {
-                    el.text = "Hôm nay: ${T.fmt(tot)} / ${elim}p · ${set.size} app"
-                    ebar.progress = Math.min(100L, tot / 60000L * 100L / elim).toInt()
-                }
-            }.start()
+        if (running && Settings.canDrawOverlays(this) && Usage.hasAccess(this)) {
+            st.addView(tv("Quyền đã đủ. " + (Store.p(this).getString("pill_state", null) ?: ""), 12f, false, mut))
         }
-        ec.addView(btn(if (elim > 0) "Giới hạn: $elim phút mỗi ngày" else "Đặt giới hạn mỗi ngày") { editEnt() })
-        ec.addView(btn("Chọn app giải trí") { pickEnt() })
-        ll.addView(ec)
+        ll.addView(st)
 
         val tc = card()
         tc.addView(tv("Chế độ tập trung", 16f, true))
@@ -1143,6 +1111,118 @@ class MainActivity : Activity() {
         tc.addView(tv("Chỉ chặn các app được tick bên dưới. Khi bị chặn: đếm ngược ${MonitorService.fmtSec(Store.waitSec(this))}, mở ${MonitorService.fmtSec(Store.openSec(this))}, rồi khoá lại.", 12f, false, mut))
         ll.addView(tc)
         updateFocusLabel()
+
+        val dg = foldCard(ll, "Chẩn đoán")
+        val slog = Store.p(this).getString("svc_log", null)
+        if (slog != null) dg.addView(tv("Nhật ký:\n$slog", 11f, false, mut))
+        val lastPkg = Store.p(this).getString("last_pkg", null)
+        val lastT = Store.p(this).getLong("last_t", 0L)
+        dg.addView(tv(if (lastPkg == null) "Chưa ghi nhận app nào." else "App gần nhất: ${T.hms(lastT)} · $lastPkg", 12f, false, mut))
+        val err = Store.p(this).getString("last_err", null)
+        if (err != null) dg.addView(tv("Lỗi gần nhất: $err", 12f, false, Color.RED))
+        dg.addView(tv("Ô thời gian: " + (Store.p(this).getString("pill_state", null) ?: "chưa có thông tin"), 12f, false, mut))
+        dg.addView(btn("Hiện thử ô thời gian") {
+            val svc = MonitorService.inst
+            if (svc == null) {
+                Toast.makeText(this, "Bộ theo dõi chưa chạy. Bấm Khởi động bộ theo dõi.", Toast.LENGTH_LONG).show()
+            } else {
+                svc.demo()
+                Toast.makeText(this, "Nhìn ô cam ở góc màn hình trong vài giây", Toast.LENGTH_LONG).show()
+            }
+        })
+
+        val kc = foldCard(ll, "Giữ chạy luôn (Redmi)")
+        kc.addView(tv("1. Mở màn hình đa nhiệm, nhấn giữ thẻ Tau và bấm biểu tượng khoá.\n2. Bật Tự khởi động cho Tau.\n3. Đặt Tiết kiệm pin của Tau là Không hạn chế.\nSau đó đừng vuốt tắt Tau khỏi màn hình đa nhiệm.", 12f, false, mut))
+        kc.addView(btn("Mở cài đặt Tự khởi động") {
+            openFirst(listOf(Intent().setComponent(ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"))))
+        })
+        kc.addView(btn("Mở cài đặt pin của Tau") {
+            openFirst(
+                listOf(
+                    Intent().setComponent(ComponentName("com.miui.powerkeeper", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"))
+                        .putExtra("package_name", packageName).putExtra("package_label", "Tau")
+                )
+            )
+        })
+
+        val bc = foldCard(ll, "Giờ đi ngủ")
+        val bsw = Switch(this)
+        bsw.text = "Giờ đi ngủ"
+        bsw.textSize = 16f
+        bsw.isChecked = Store.bedOn(this)
+        bsw.setOnCheckedChangeListener { _, v -> Store.p(this).edit().putBoolean("bed_on", v).apply() }
+        bc.addView(bsw)
+        bc.addView(tv("Trong khoảng này các app giải trí bị khoá theo chu kỳ đếm ngược như bình thường, để bạn buông điện thoại đi ngủ.", 12f, false, mut))
+        bc.addView(btn("Bắt đầu: ${T.mm(Store.bedStart(this))}") {
+            val s0 = Store.bedStart(this)
+            TimePickerDialog(this, { _, hh, mm -> Store.p(this).edit().putInt("bed_s", hh * 60 + mm).apply(); buildFocus() }, s0 / 60, s0 % 60, true).show()
+        })
+        bc.addView(btn("Kết thúc: ${T.mm(Store.bedEnd(this))}") {
+            val e0 = Store.bedEnd(this)
+            TimePickerDialog(this, { _, hh, mm -> Store.p(this).edit().putInt("bed_e", hh * 60 + mm).apply(); buildFocus() }, e0 / 60, e0 % 60, true).show()
+        })
+
+        val gc = foldCard(ll, "Mục tiêu mỗi ngày")
+        gc.addView(tv("Đặt tổng số phút tối đa dùng điện thoại mỗi ngày. Vượt thì Tau báo, đạt liên tiếp nhiều ngày thì có chuỗi ở tab Thời gian.", 12f, false, mut))
+        val gm = Store.goalMin(this)
+        gc.addView(btn(if (gm > 0) "Mục tiêu: $gm phút" else "Đặt mục tiêu") {
+            askNum("Mục tiêu (phút mỗi ngày), 0 = tắt", "Số phút", gm, 0, 1440) { Store.p(this).edit().putInt("goal_min", it).apply(); buildFocus() }
+        })
+
+        val lk = foldCard(ll, "Thời gian khoá app")
+        lk.addView(tv("Khi app bị chặn: màn hình chặn đếm ngược, hết đếm thì cho dùng, hết giờ dùng thì khoá lại. Âm thanh bị tắt trong lúc khoá.", 12f, false, mut))
+        lk.addView(btn("Chờ trước khi mở: ${MonitorService.fmtSec(Store.waitSec(this))}") {
+            askSec("Số giây chờ trước khi mở", Store.waitSec(this), 3, 600) { Store.setWaitSec(this, it); buildFocus() }
+        })
+        lk.addView(btn("Được dùng: ${MonitorService.fmtSec(Store.openSec(this))}") {
+            askSec("Số giây được dùng trước khi khoá lại", Store.openSec(this), 10, 3600) { Store.setOpenSec(this, it); buildFocus() }
+        })
+
+        val oc = foldCard(ll, "Đồng hồ nhỏ trên màn hình")
+        val osw = Switch(this)
+        osw.text = "Hiện đồng hồ nhỏ khi dùng app"
+        osw.textSize = 15f
+        osw.isChecked = Store.p(this).getBoolean("overlay_on", true)
+        osw.setOnCheckedChangeListener { _, v -> Store.p(this).edit().putBoolean("overlay_on", v).apply() }
+        oc.addView(osw)
+        oc.addView(tv("Hiện số phút bạn đã dùng app đó hôm nay ở góc màn hình, kèm giới hạn nếu có.", 12f, false, mut))
+        val posNames = arrayOf("Trên phải", "Trên trái", "Dưới phải", "Dưới trái")
+        val pos = Store.p(this).getInt("overlay_pos", 0)
+        oc.addView(btn("Vị trí: ${posNames[pos]}") {
+            Store.p(this).edit().putInt("overlay_pos", (pos + 1) % 4).apply()
+            buildFocus()
+        })
+
+        val ec = foldCard(ll, "Hẹn giờ giải trí")
+        ec.addView(tv("Quỹ thời gian chung mỗi ngày cho các app trò chơi và giải trí. Dùng hết quỹ là các app này bị chặn.", 12f, false, mut))
+        val elim = Store.entLimit(this)
+        val el = tv("", 14f)
+        el.setPadding(0, dp(8), 0, dp(4))
+        ec.addView(el)
+        val ebar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        ebar.max = 100
+        ebar.progressTintList = ColorStateList.valueOf(orange)
+        ec.addView(ebar, LinearLayout.LayoutParams(-1, dp(10)))
+        if (elim <= 0) {
+            el.text = "Chưa đặt giới hạn · ${Ent.set(this).size} app đang tính là giải trí"
+        } else if (!Usage.hasAccess(this)) {
+            el.text = "Cần cấp quyền xem thời gian dùng ở tab Thời gian."
+        } else {
+            el.text = "Đang tính..."
+            Thread {
+                val now = System.currentTimeMillis()
+                val set = Ent.set(this)
+                var tot = 0L
+                for (s in Usage.sessions(this, T.dayStart(now), now)) if (set.contains(s.pkg)) tot += s.end - s.start
+                runOnUiThread {
+                    el.text = "Hôm nay: ${T.fmt(tot)} / ${elim}p · ${set.size} app"
+                    ebar.progress = Math.min(100L, tot / 60000L * 100L / elim).toInt()
+                }
+            }.start()
+        }
+        ec.addView(btn(if (elim > 0) "Giới hạn: $elim phút mỗi ngày" else "Đặt giới hạn mỗi ngày") { editEnt() })
+        ec.addView(btn("Chọn app giải trí") { pickEnt() })
+
 
         val lc = card()
         lc.addView(tv("App bị chặn khi tập trung", 16f, true))
