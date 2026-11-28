@@ -97,7 +97,7 @@ stop=function(){clearInterval(t);document.removeEventListener('visibilitychange'
 lvBtns();init()};
 
 G.caro=function(){
-var mode='pvp';frame('','<div class="lvs" id="md"><button data-m="pvp" class="on">2 người</button><button data-m="ai">Đấu máy</button></div><canvas id="c" width="450" height="450"></canvas><div class="msg" id="m"></div><div style="display:flex;gap:8px"><button class="b w" id="un" style="flex:1">↶ Đi lại</button><button class="b" id="rs" style="flex:1">Ván mới</button></div>');
+var mode='pvp',diff='V';frame('','<div class="lvs" id="md"><button data-m="pvp" class="on">2 người</button><button data-m="ai">Đấu máy</button></div><div class="lvs" id="cdiff"><button data-d="D">Dễ</button><button data-d="V" class="on">Bình thường</button><button data-d="K">Khó</button></div><canvas id="c" width="450" height="450"></canvas><div class="msg" id="m"></div><div style="display:flex;gap:8px"><button class="b w" id="un" style="flex:1">↶ Đi lại</button><button class="b" id="rs" style="flex:1">Ván mới</button></div>');
 var N=15,CS=30,c=document.getElementById('c'),x=c.getContext('2d'),B,mv,turn,done,line;
 function msg(s){document.getElementById('m').innerHTML=s}
 function who(p){return p==1?'<span style="color:#C2410C">✕ X</span>':'<span style="color:#1F2937">◯ O</span>'}
@@ -108,7 +108,7 @@ function cnt(px,py,dx,dy,p){var n=0,a=px+dx,b=py+dy;while(a>=0&&b>=0&&a<N&&b<N&&
 function winAt(px,py){var p=B[py][px],D=[[1,0],[0,1],[1,1],[1,-1]];for(var i=0;i<4;i++){var d=D[i],f=cnt(px,py,d[0],d[1],p),g=cnt(px,py,-d[0],-d[1],p);if(f.n+g.n+1>=5)return[[px-d[0]*g.n,py-d[1]*g.n],[px+d[0]*f.n,py+d[1]*f.n]]}return null}
 function place(px,py){if(done||B[py][px])return false;B[py][px]=turn;mv.push([px,py]);beep(turn==1?520:400,.06);buzz(8);var w=winAt(px,py);if(w){done=true;line=w;msg_=who(turn)+' thắng! 🎉';if(mode=='ai'&&turn==1)best('caro',best('caro')+1);buzz(60)}else if(mv.length==N*N){done=true;msg_='Hoà, bàn cờ đã đầy'}else turn=3-turn;st();return true}
 function sc(px,py,p){var D=[[1,0],[0,1],[1,1],[1,-1]],s=0;for(var i=0;i<4;i++){var d=D[i],f=cnt(px,py,d[0],d[1],p),g=cnt(px,py,-d[0],-d[1],p),n=f.n+g.n+1,o=f.open+g.open;if(n>=5)s+=100000;else if(n==4)s+=o==2?10000:o==1?1000:0;else if(n==3)s+=o==2?900:o==1?80:0;else if(n==2)s+=o==2?60:o==1?8:0;else s+=o}return s}
-function ai(){if(done||turn!=2)return;var best_=-1,cand=[];for(var y=0;y<N;y++)for(var xx=0;xx<N;xx++){if(B[y][xx])continue;var near=false;for(var dy=-2;dy<=2&&!near;dy++)for(var dx=-2;dx<=2;dx++){var a=xx+dx,b=y+dy;if(a>=0&&b>=0&&a<N&&b<N&&B[b][a]){near=true;break}}if(!near&&mv.length)continue;var s=Math.max(sc(xx,y,2)*1.05,sc(xx,y,1))+Math.random();if(s>best_){best_=s;cand=[[xx,y]]}}
+function ai(){if(done||turn!=2)return;var best_=-1,cand=[];for(var y=0;y<N;y++)for(var xx=0;xx<N;xx++){if(B[y][xx])continue;var near=false;for(var dy=-2;dy<=2&&!near;dy++)for(var dx=-2;dx<=2;dx++){var a=xx+dx,b=y+dy;if(a>=0&&b>=0&&a<N&&b<N&&B[b][a]){near=true;break}}if(!near&&mv.length)continue;var s=diff=='D'?sc(xx,y,2)*.7+Math.random()*1800:diff=='K'?Math.max(sc(xx,y,2)*1.2,sc(xx,y,1)*1.3)+Math.random():Math.max(sc(xx,y,2)*1.05,sc(xx,y,1))+Math.random();if(s>best_){best_=s;cand=[[xx,y]]}}
 if(!cand.length)cand=[[7,7]];place(cand[0][0],cand[0][1])}
 function draw(){x.fillStyle='#FFF4EA';x.fillRect(0,0,450,450);x.strokeStyle='#E5D5C5';x.lineWidth=1;for(var i=0;i<N;i++){x.beginPath();x.moveTo(15,15+i*CS);x.lineTo(435,15+i*CS);x.moveTo(15+i*CS,15);x.lineTo(15+i*CS,435);x.stroke()}
 mv.forEach(function(m,i){var cx=15+m[0]*CS,cy=15+m[1]*CS,p=B[m[1]][m[0]];x.lineWidth=3.5;if(p==1){x.strokeStyle='#C2410C';x.beginPath();x.moveTo(cx-8,cy-8);x.lineTo(cx+8,cy+8);x.moveTo(cx+8,cy-8);x.lineTo(cx-8,cy+8);x.stroke()}else{x.strokeStyle='#1F2937';x.beginPath();x.arc(cx,cy,9,0,7);x.stroke()}
@@ -118,6 +118,7 @@ c.onclick=function(e){var r=c.getBoundingClientRect(),px=Math.round(((e.clientX-
 document.getElementById('rs').onclick=init;
 document.getElementById('un').onclick=function(){if(!mv.length)return;var m=mv.pop(),p=B[m[1]][m[0]];B[m[1]][m[0]]=0;if(mode=='ai'&&p==2&&mv.length){m=mv.pop();B[m[1]][m[0]]=0}done=false;line=null;turn=mode=='ai'?1:p;st()};
 document.querySelectorAll('#md button').forEach(function(b){b.onclick=function(){mode=b.dataset.m;document.querySelectorAll('#md button').forEach(function(o){o.className=o==b?'on':''});init()}});
+document.querySelectorAll('#cdiff button').forEach(function(b){b.onclick=function(){diff=b.dataset.d;document.querySelectorAll('#cdiff button').forEach(function(o){o.className=o==b?'on':''});init()}});
 init()};
 
 function sdSaved(){try{return !!localStorage.getItem('tau_sdk')}catch(e){return false}}
@@ -252,7 +253,7 @@ document.querySelectorAll('#lvMem button').forEach(function(b){b.onclick=functio
 function render(){var d=document.getElementById('bd');d.innerHTML='';c.forEach(function(v,i){var e=document.createElement('div');e.textContent=v;if(ok[i])e.className='ok';else if(up.indexOf(i)>=0)e.className='up';e.onclick=function(){flip(i)};d.appendChild(e)});document.getElementById('sc').textContent='Lượt '+mv}
 function flip(i){if(lock||ok[i]||up.indexOf(i)>=0)return;up.push(i);render();if(up.length==2){mv++;lock=true;var a=up[0],b=up[1];setTimeout(function(){if(c[a]==c[b]){ok[a]=ok[b]=1}up=[];lock=false;render();if(Object.keys(ok).length==c.length){document.getElementById('m').textContent='Xong sau '+mv+' lượt! 🎉';best('mem_inv',1000-mv)}},700)}}
 document.getElementById('rs').onclick=init;init()};
-G.tetris=function(){frame('','<canvas id="c" width="200" height="400" style="width:56%;margin:0 auto"></canvas><div class="msg" id="m">Vuốt trái phải để di chuyển, vuốt lên để xoay, vuốt xuống để rơi nhanh</div><div class="dp"><button class="b" data-a="L">◀</button><button class="b" data-a="R2">⟳</button><button class="b" data-a="R">▶</button><button class="b" data-a="D">▼</button><button class="b" data-a="H">⤓</button><button class="b" data-a="N">Mới</button></div>');
+G.tetris=function(){var diff='V';frame('','<div class="lvs" id="lvTet"><button data-l="D">Dễ</button><button data-l="V" class="on">Bình thường</button><button data-l="K">Khó</button></div><canvas id="c" width="200" height="400' style="width:56%;margin:0 auto"></canvas><div class="msg" id="m">Vuốt trái phải để di chuyển, vuốt lên để xoay, vuốt xuống để rơi nhanh</div><div class="dp"><button class="b" data-a="L">◀</button><button class="b" data-a="R2">⟳</button><button class="b" data-a="R">▶</button><button class="b" data-a="D">▼</button><button class="b" data-a="H">⤓</button><button class="b" data-a="N">Mới</button></div>');
 var C=document.getElementById('c'),x=C.getContext('2d'),bd,p,sc,ln,lv,over,t;
 var SH={I:[[1,1,1,1]],O:[[1,1],[1,1]],T:[[0,1,0],[1,1,1]],S:[[0,1,1],[1,1,0]],Z:[[1,1,0],[0,1,1]],J:[[1,0,0],[1,1,1]],L:[[0,0,1],[1,1,1]]},CL={I:'#06B6D4',O:'#FACC15',T:'#A855F7',S:'#22C55E',Z:'#EF4444',J:'#3B82F6',L:'#F97316'};
 function rot(m){return m[0].map(function(_,i){return m.map(function(r){return r[i]}).reverse()})}
@@ -263,8 +264,9 @@ sc+=[0,100,300,500,800][n]*lv;ln+=n;lv=1+Math.floor(ln/10);best('tetris',sc);np(
 function mv(d){if(over)return;if(d=='L'&&!hit(p.m,p.x-1,p.y))p.x--;else if(d=='R'&&!hit(p.m,p.x+1,p.y))p.x++;else if(d=='R2'){var r=rot(p.m);if(!hit(r,p.x,p.y))p.m=r;else if(!hit(r,p.x-1,p.y)){p.m=r;p.x--}else if(!hit(r,p.x+1,p.y)){p.m=r;p.x++}}else if(d=='D'){if(!hit(p.m,p.x,p.y+1))p.y++;else lock()}else if(d=='H'){while(!hit(p.m,p.x,p.y+1))p.y++;lock()}draw()}
 function draw(){x.fillStyle='#FFF4EA';x.fillRect(0,0,200,400);for(var y=0;y<20;y++)for(var c=0;c<10;c++)if(bd[y][c]){x.fillStyle=bd[y][c];x.fillRect(c*20+1,y*20+1,18,18)}
 if(!over){x.fillStyle=p.c;for(var r=0;r<p.m.length;r++)for(var q=0;q<p.m[r].length;q++)if(p.m[r][q])x.fillRect((p.x+q)*20+1,(p.y+r)*20+1,18,18)}document.getElementById('sc').textContent='Điểm '+sc+' · Cấp '+lv}
-function loop(){if(!over&&!hit(p.m,p.x,p.y+1))p.y++;else if(!over)lock();draw();t=setTimeout(loop,Math.max(110,700-lv*55))}
-function init(){clearTimeout(t);bd=[];for(var i=0;i<20;i++)bd.push(Array(10).fill(0));sc=0;ln=0;lv=1;over=false;document.getElementById('m').textContent='Vuốt trái phải để di chuyển, vuốt lên để xoay, vuốt xuống để rơi nhanh';np();draw();t=setTimeout(loop,700)}
+function loop(){if(!over&&!hit(p.m,p.x,p.y+1))p.y++;else if(!over)lock();draw();t=setTimeout(loop,Math.max(90,(diff=='D'?950:diff=='K'?470:700)-lv*55))}
+function init(){clearTimeout(t);bd=[];for(var i=0;i<20;i++)bd.push(Array(10).fill(0));sc=0;ln=0;lv=diff=='K'?4:1;over=false;document.getElementById('m').textContent='Vuốt trái phải để di chuyển, vuốt lên để xoay, vuốt xuống để rơi nhanh';np();draw();t=setTimeout(loop,700)}
+document.querySelectorAll('#lvTet button').forEach(function(b){b.onclick=function(){diff=b.dataset.l;document.querySelectorAll('#lvTet button').forEach(function(o){o.className=o===b?'on':''});init()}});
 document.querySelectorAll('.dp button').forEach(function(b){b.onclick=function(){if(b.dataset.a=='N')init();else mv(b.dataset.a)}});
 swf=function(d){mv(d=='U'?'R2':d)};stop=function(){clearTimeout(t)};init()};
 G.pen=function(){
