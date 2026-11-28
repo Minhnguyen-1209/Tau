@@ -131,6 +131,7 @@ class MainActivity : Activity() {
     private lateinit var lHealth: LinearLayout
     private lateinit var web: WebView
     private lateinit var gameWeb: WebView
+    private val chrome = ArrayList<View>()
     private lateinit var wellWeb: WebView
     private lateinit var sciWeb: WebView
     private var selDay = 0L
@@ -378,12 +379,35 @@ class MainActivity : Activity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
+    inner class GameBridge {
+        @JavascriptInterface
+        fun vibrate(ms: Int) {
+            runOnUiThread {
+                try {
+                    val v = getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                    if (Build.VERSION.SDK_INT >= 26) v.vibrate(android.os.VibrationEffect.createOneShot(ms.toLong().coerceIn(1, 200), android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                    else @Suppress("DEPRECATION") v.vibrate(ms.toLong().coerceIn(1, 200))
+                } catch (e: Exception) {}
+            }
+        }
+
+        @JavascriptInterface
+        fun fullscreen(on: Boolean) {
+            runOnUiThread {
+                for (v in chrome) v.visibility = if (on) View.GONE else View.VISIBLE
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = if (on) (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE) else View.SYSTEM_UI_FLAG_VISIBLE
+            }
+        }
+    }
+
     private fun makeGames(): WebView {
         val w = WebView(this)
         w.settings.javaScriptEnabled = true
         w.settings.domStorageEnabled = true
         w.webViewClient = WebViewClient()
         w.setBackgroundColor(Color.TRANSPARENT)
+        w.addJavascriptInterface(GameBridge(), "TauGame")
         val html = assets.open("games.html").bufferedReader().use { it.readText() }
         w.loadDataWithBaseURL("https://tau.app/games/", html, "text/html", "utf-8", null)
         return w
@@ -450,11 +474,13 @@ class MainActivity : Activity() {
         hdrStatus.setOnClickListener { showTab(1) }
         top.addView(hdrStatus)
         col.addView(top, LinearLayout.LayoutParams(-1, -2))
+        chrome.add(top)
 
         subRow = LinearLayout(this)
         subRow.orientation = LinearLayout.HORIZONTAL
         subRow.setPadding(dp(16), dp(6), dp(16), dp(6))
         col.addView(subRow, LinearLayout.LayoutParams(-1, -2))
+        chrome.add(subRow)
 
         val content = FrameLayout(this)
         col.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -500,6 +526,7 @@ class MainActivity : Activity() {
         navWrap.addView(navLine, LinearLayout.LayoutParams(-1, 1))
         navWrap.addView(nav)
         col.addView(navWrap, LinearLayout.LayoutParams(-1, -2))
+        chrome.add(navWrap)
         setContentView(rootF)
         showTab(0)
     }
@@ -547,6 +574,7 @@ class MainActivity : Activity() {
     }
 
     private fun showTab(i: Int) {
+        if (i != 4 && chrome.isNotEmpty() && chrome[0].visibility == View.GONE) { GameBridge().fullscreen(false); gameWeb.evaluateJavascript("window.exitFs&&exitFs()", null) }
         tab = i
         val g = if (i == 0 || i == 1 || i == 2) 0 else 1
         lastPage[g] = i
